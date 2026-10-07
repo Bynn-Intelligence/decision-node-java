@@ -1,0 +1,111 @@
+package com.bynn.decisionnode;
+
+import java.util.Collections;
+import java.util.LinkedHashMap;
+import java.util.Map;
+import java.util.NoSuchElementException;
+
+/**
+ * The result of one {@code POST /v1/decide}: one answer per question, read by question id.
+ *
+ * <pre>{@code
+ * Decision d = dn.decide(state, questions);
+ * d.choice("route").choice();     // "billing"
+ * d.truth("escalate").truth();    // 0.94
+ * }</pre>
+ */
+public final class Decision {
+    private final Map<String, Answer> answers;
+    private final String model;
+    private final Usage usage;
+    private final String requestId;
+    private final Double latencyMs;
+    private final Safety safety;
+    private final Map<String, Object> raw;
+
+    Decision(Map<String, Answer> answers, String model, Usage usage, String requestId, Double latencyMs, Safety safety, Map<String, Object> raw) {
+        this.answers = Collections.unmodifiableMap(new LinkedHashMap<>(answers));
+        this.model = model;
+        this.usage = usage;
+        this.requestId = requestId;
+        this.latencyMs = latencyMs;
+        this.safety = safety;
+        this.raw = raw;
+    }
+
+    /** Every answer, by question id, in the order the API sent them. */
+    public Map<String, Answer> answers() {
+        return answers;
+    }
+
+    /**
+     * The answer to the question with this id.
+     *
+     * @throws NoSuchElementException when the response has no answer with this id
+     */
+    public Answer get(String id) {
+        Answer a = answers.get(id);
+        if (a == null) {
+            throw new NoSuchElementException("no answer with the id '" + id + "'; the ids are " + answers.keySet());
+        }
+        return a;
+    }
+
+    /** The answer to a {@code truth} question. */
+    public TruthAnswer truth(String id) {
+        return as(id, TruthAnswer.class);
+    }
+
+    /** The answer to a {@code choice} question. */
+    public ChoiceAnswer choice(String id) {
+        return as(id, ChoiceAnswer.class);
+    }
+
+    /** The answer to a {@code score} question. */
+    public ScoreAnswer score(String id) {
+        return as(id, ScoreAnswer.class);
+    }
+
+    private <T extends Answer> T as(String id, Class<T> type) {
+        Answer a = get(id);
+        if (!type.isInstance(a)) {
+            throw new IllegalStateException("the answer '" + id + "' is of type '" + a.type() + "', not " + type.getSimpleName());
+        }
+        return type.cast(a);
+    }
+
+    /** The model version that answered, for example {@code decisionnode-1.0}. */
+    public String model() {
+        return model;
+    }
+
+    /** The tokens this decision used. */
+    public Usage usage() {
+        return usage;
+    }
+
+    /** The {@code x-request-id} response header. */
+    public String requestId() {
+        return requestId;
+    }
+
+    /** The server's processing time in milliseconds, from {@code x-decisionnode-latency-ms}; null when absent. */
+    public Double latencyMs() {
+        return latencyMs;
+    }
+
+    /** The safety check, from {@code x-decisionnode-safety}; null when the server sent none. */
+    public Safety safety() {
+        return safety;
+    }
+
+    /** The response body as parsed JSON, unknown fields included. */
+    public Map<String, Object> raw() {
+        return raw;
+    }
+
+    @Override
+    public String toString() {
+        return "Decision{model=" + model + ", answers=" + answers + ", requestId=" + requestId + "}";
+    }
+}
