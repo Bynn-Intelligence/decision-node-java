@@ -198,7 +198,7 @@ public final class Session {
         Object image = frame.image();
         try {
             // The frame's fixed rules, before anything is written: a refused frame takes no seq.
-            LocalChecks.frame(frame, raw.get("questions"), client.limits(model()));
+            checkFrame(frame);
         } catch (RuntimeException e) {
             return CompletableFuture.failedFuture(e);
         }
@@ -220,6 +220,23 @@ public final class Session {
             sending = done;
         }
         return done;
+    }
+
+    /**
+     * Runs every check {@link #send(Frame)} runs before writing a frame and throws what it would
+     * throw: the frame's fixed rules (its {@code seq}, a value or an image, the question ids of
+     * this session, the nesting limit, the image rules, no URL image). Nothing is sent or
+     * uploaded and no {@code seq} is used. Returns normally when the frame would be sent.
+     *
+     * @throws BadRequestError with {@code error_type} {@code api_usage_error} for a frame the
+     *     server would refuse
+     */
+    public void checkFrame(Frame frame) {
+        if (frame == null) {
+            throw new IllegalArgumentException("frame must not be null");
+        }
+        LocalChecks.frame(frame, raw.get("questions"), client.limits(model()));
+        Json.write(message(0, frame, frame.image() instanceof Image ? null : frame.image()));
     }
 
     private static Map<String, Object> message(long n, Frame frame, Object image) {

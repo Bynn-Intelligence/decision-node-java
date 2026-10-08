@@ -120,6 +120,21 @@ public final class Batches {
                 });
     }
 
+    /**
+     * Runs every local check {@link #create(List)} runs before sending (the {@code custom_id}
+     * rules, then each request as a decision, limits held from an earlier
+     * {@link DecisionNode#models()} call included) and throws what it would throw. Nothing is
+     * sent or uploaded. Returns normally when the call would be sent.
+     */
+    public void checkCreateRequest(List<BatchRequest> requests) {
+        plan(requests == null ? List.of() : requests, true);
+    }
+
+    /** {@link #checkCreateRequest(List)} for {@link #add(String, List)}: an add needs a request. */
+    public void checkAddRequest(List<BatchRequest> requests) {
+        plan(requests == null ? List.of() : requests, false);
+    }
+
     // ------------------------------------------------------------------ read, cancel
 
     /** {@code GET /v1/batches/{id}}. */

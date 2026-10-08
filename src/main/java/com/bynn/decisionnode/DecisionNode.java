@@ -60,6 +60,11 @@ public final class DecisionNode {
     public static final String DEFAULT_BASE_URL = "https://api.decisionnode.com";
     public static final String DEFAULT_MODEL = "decisionnode-latest";
     public static final Duration DEFAULT_TIMEOUT = Duration.ofSeconds(10);
+    /**
+     * The time allowed for each storage {@code PUT} of an image upload, apart from
+     * {@link #DEFAULT_TIMEOUT}: an image of 10 MB on a slow uplink needs more than an API call.
+     */
+    public static final Duration DEFAULT_UPLOAD_TIMEOUT = Duration.ofSeconds(60);
     public static final int DEFAULT_MAX_RETRIES = 2;
     public static final int DEFAULT_CONCURRENCY = 8;
 
@@ -125,7 +130,8 @@ public final class DecisionNode {
         }
         this.transport = new Transport(apiKey, baseUrl, timeout, maxRetries, headers, http,
                 b.waiter != null ? b.waiter : Transport::delay);
-        this.uploads = new Uploads(transport, inlineThreshold, b.clock != null ? b.clock : System::currentTimeMillis);
+        this.uploads = new Uploads(transport, inlineThreshold, b.uploadTimeout == null ? DEFAULT_UPLOAD_TIMEOUT : b.uploadTimeout,
+                b.clock != null ? b.clock : System::currentTimeMillis);
         this.batches = new Batches(this);
     }
 
@@ -311,6 +317,28 @@ public final class DecisionNode {
      * API's own error class).
      */
     private Plan plan(String path, DecideRequest request, boolean systemone) {
+        Map<String, Object> head = checked(request, systemone);
+        List<Object> images = request.images();
+        if (images.isEmpty()) {
+            return new Plan(path, head, images, Json.write(head), Set.of());
+        }
+        CompletableFuture<Uploads.Wires> wires = needsUpload(images) ? null : uploads.wires(images, true, false);
+        if (wires != null && wires.isDone()) {
+            Uploads.Wires w = wires.join();
+            Map<String, Object> body = new LinkedHashMap<>(head);
+            body.put("images", w.wires());
+            return new Plan(path, head, images, Json.write(body), w.placed());
+        }
+        // Some images go up first: a body that cannot be serialised fails before any upload.
+        Json.write(head);
+        return new Plan(path, head, images, null, Set.of());
+    }
+
+    /**
+     * Every local check of a decision, in the server's order, and the body without its images.
+     * Nothing is sent or uploaded.
+     */
+    private Map<String, Object> checked(DecideRequest request, boolean systemone) {
         if (request == null) {
             throw new IllegalArgumentException("request must not be null");
         }
@@ -328,19 +356,37 @@ public final class DecisionNode {
         LocalChecks.request(LocalChecks.probe(head, images.size()),
                 systemone ? LocalChecks.Profile.SYSTEMONE : LocalChecks.Profile.DECIDE, limits);
         LocalChecks.images(images, limits);
-        if (images.isEmpty()) {
-            return new Plan(path, head, images, Json.write(head), Set.of());
-        }
-        CompletableFuture<Uploads.Wires> wires = needsUpload(images) ? null : uploads.wires(images, true, false);
-        if (wires != null && wires.isDone()) {
-            Uploads.Wires w = wires.join();
-            Map<String, Object> body = new LinkedHashMap<>(head);
-            body.put("images", w.wires());
-            return new Plan(path, head, images, Json.write(body), w.placed());
-        }
-        // Some images go up first: a body that cannot be serialised fails before any upload.
-        Json.write(head);
-        return new Plan(path, head, images, null, Set.of());
+        return head;
+    }
+
+    // ------------------------------------------------------------------ checks without sending
+
+    /**
+     * Runs every local check {@link #decide(DecideRequest)} runs before sending, exactly as
+     * sending would (limits held from an earlier {@link #models()} call included), and throws
+     * what it would throw. Nothing is sent and nothing is uploaded. Returns normally when the
+     * request would be sent. The helpers ({@code check}, {@code classify}, {@code score},
+     * {@code number}, {@code gate}) send a decision, so their requests check the same way.
+     *
+     * @throws BadRequestError or {@link ValidationError} for a request the API would refuse
+     * @throws IllegalArgumentException for an argument that cannot be sent
+     */
+    public void checkRequest(DecideRequest request) {
+        Json.write(checked(request, false));
+    }
+
+    /** {@link #checkRequest(DecideRequest)} for {@link #systemone(DecideRequest)}, the strict path. */
+    public void checkSystemoneRequest(DecideRequest request) {
+        Json.write(checked(request, true));
+    }
+
+    /**
+     * Runs every local check {@link #openSession(SessionRequest)} runs before sending and throws
+     * what it would throw. Nothing is sent. Frames check with {@link Session#checkFrame(Frame)};
+     * batches with {@link Batches#checkCreateRequest(List)} and {@link Batches#checkAddRequest(List)}.
+     */
+    public void checkRequest(SessionRequest request) {
+        Json.write(sessionBody(request));
     }
 
     /** True when some local image of the request is to be uploaded rather than sent inline. */
@@ -899,12 +945,22 @@ public final class DecisionNode {
 
     /**
      * The {@code /v1/models} entry of a model (null for the client's) with its name under
-     * {@code model}, when an earlier {@link #models()} call gave one; else empty, and the checks
-     * that need it are left to the server.
+     * {@code model}, when an earlier {@link #models()} call gave one: the entry of that name, else
+     * the entry that states the name as its {@code alias} or {@code version}. Empty otherwise,
+     * and the checks that need it are left to the server.
      */
     Map<String, Object> limits(String name) {
         String n = name == null || name.isEmpty() ? model : name;
         Map<String, Object> entry = held.get(n);
+        if (entry == null) {
+            // A name the list states as an entry's alias or pinned version holds that entry.
+            for (Map<String, Object> e : held.values()) {
+                if (n.equals(e.get("alias")) || n.equals(e.get("version"))) {
+                    entry = e;
+                    break;
+                }
+            }
+        }
         if (entry == null) {
             return Map.of();
         }
@@ -954,6 +1010,7 @@ public final class DecisionNode {
         private Duration timeout;
         private Integer maxRetries;
         private Long inlineThreshold;
+        private Duration uploadTimeout;
         private final Map<String, String> headers = new LinkedHashMap<>();
         private HttpClient httpClient;
         private Function<String, String> environment = System::getenv;
@@ -1029,6 +1086,21 @@ public final class DecisionNode {
                 throw new IllegalArgumentException("inlineThreshold must be 0 or more, got " + bytes);
             }
             this.inlineThreshold = bytes;
+            return this;
+        }
+
+        /**
+         * The time allowed for each storage {@code PUT} attempt of an image upload, until the
+         * storage answers. Default: 60 seconds, apart from {@link #timeout(Duration)}. A
+         * {@code PUT} that outlives it is retried as a timeout, then raises {@link TimeoutError}.
+         *
+         * @throws IllegalArgumentException when it is not above 0
+         */
+        public Builder uploadTimeout(Duration uploadTimeout) {
+            if (uploadTimeout != null && (uploadTimeout.isNegative() || uploadTimeout.isZero())) {
+                throw new IllegalArgumentException("uploadTimeout must be above 0, got " + uploadTimeout);
+            }
+            this.uploadTimeout = uploadTimeout;
             return this;
         }
 

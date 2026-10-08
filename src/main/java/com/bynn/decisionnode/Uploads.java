@@ -53,10 +53,12 @@ final class Uploads {
     private final Map<Key, CompletableFuture<String>> inflight = new ConcurrentHashMap<>();
 
     private final java.util.function.LongSupplier clock;
+    private final java.time.Duration putTimeout;
 
-    Uploads(Transport transport, long inlineThreshold, java.util.function.LongSupplier clock) {
+    Uploads(Transport transport, long inlineThreshold, java.time.Duration putTimeout, java.util.function.LongSupplier clock) {
         this.transport = transport;
         this.inlineThreshold = inlineThreshold;
+        this.putTimeout = putTimeout;
         this.clock = clock;
     }
 
@@ -338,7 +340,8 @@ final class Uploads {
             return CompletableFuture.failedFuture(new DecisionNodeError(
                     "the storage URL must be https; nothing was sent to " + uri.getScheme() + "://" + uri.getHost()));
         }
-        HttpRequest.Builder rb = HttpRequest.newBuilder(uri).timeout(transport.timeout);
+        // The storage PUT has its own timeout, apart from the API attempt's.
+        HttpRequest.Builder rb = HttpRequest.newBuilder(uri).timeout(putTimeout);
         if (!https) {
             rb.version(HttpClient.Version.HTTP_1_1);
         }
