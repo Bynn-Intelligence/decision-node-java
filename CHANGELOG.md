@@ -6,15 +6,55 @@ All notable changes to this project are documented here. The format follows
 
 ## [0.1.0] - Unreleased
 
-First release of the DecisionNode SDK for Java and Kotlin.
+First release of the DecisionNode SDK for Java and Kotlin, implementing version 1.1 of the
+DecisionNode SDK specification.
 
-### Added
+### Added in specification 1.1
+
+- `number` questions: the `Questions.number` builder (a bound left null is left out, so the API's
+  defaults apply), `NumberAnswer` with `number`, `expected`, `confidence` and `probabilities` keyed
+  by the value as the API wrote it, the `number` helper, and `Decision.number(id)`.
+- Every `truth` answer is a `TruthAnswer`, whichever path sent it.
+- `systemone`, the strict `/v1/systemone` path, with the model always sent.
+- Image URLs are the recommended form and pass through after a local check (`https`, at most
+  2,048 characters). `Image.fromBase64`, `Image.fromStream` and `Image.fromUpload` join the
+  existing forms.
+- Local bytes are checked before any request: JPEG, PNG or WebP by their magic bytes, at most
+  10 MB, at most 4 images, unique ids, and at most 40 megapixels read from the JPEG, PNG or WebP
+  header without decoding the image.
+- `DEFAULT_INLINE_THRESHOLD` (524,288 bytes) and the `inlineThreshold` builder option: a
+  request's local images under it go inline, at or above it they are uploaded with one presign
+  and parallel `PUT`s carrying exactly the returned headers. Uploads are cached by SHA-256 in the
+  client's memory (256 entries, until 5 minutes before they expire) and reused whatever their
+  size; concurrent requests with the same bytes share one upload. A stale upload the client placed
+  is uploaded again and the request resent once. `upload(images)` uploads explicitly.
+- The API's fixed request rules are checked locally and raise the API's own class
+  (`BadRequestError`, or `ValidationError` with its entries for a number grid fault or an empty
+  score) before any request: option and level counts, a `truth` without text, number grids.
+- Sessions over the JDK's WebSocket: `openSession`, `Session.connect`, `send` (frames numbered
+  from 1), `replies`, `nextEvent`, `end`, the `Reply`, `FrameError` and `SessionClosed` values,
+  `SessionLimitError` (a `RateLimitError`), and `supervise`, which reopens on the reopen codes
+  and connects again on `1013`.
+- The Batch API on `batches()`: `create`, `add` (split at 10 MiB), `finalize`, `get`, `list`,
+  `results` (read line by line) and `cancel`, and `runBatch` for the whole lifecycle.
+- `models()` returns the fields of specification 1.1 in `limits`.
+
+### Changed in specification 1.1
+
+- `SPEC_VERSION` is `"1.1"`.
+- Image bytes that are not JPEG, PNG or WebP raise `BadRequestError` before any request, no
+  longer `IllegalArgumentException` when the `Image` is made. A file that cannot be read still
+  throws `IllegalArgumentException` where the `Image` is made.
+- `Answer` permits `NumberAnswer`: an exhaustive `switch` or Kotlin `when` over it gains a
+  branch.
+
+### Added in specification 1.0
 
 - `DecisionNode` client with `decide`, `decideMany`, `check`, `classify`, `score`, `gate`,
   `models` and `decideRaw`, each in a blocking form and an `...Async` form returning a
   `CompletableFuture`. `check`, `classify`, `score` and `gate` take images and a model like
   `decide`. `gate` asks three questions with fixed wording, the same in every DecisionNode SDK.
-- `DecisionNode.SPEC_VERSION`, the version of the SDK specification implemented: `"1.0"`.
+- `DecisionNode.SPEC_VERSION`, the version of the SDK specification implemented.
 - `models()` returns `ModelInfo` entries; `decideMany` returns one `DecisionResult` per request.
   It checks every request before sending any: a concurrency below 1 or an invalid request
   throws `IllegalArgumentException` and nothing is sent.
