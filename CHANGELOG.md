@@ -28,9 +28,22 @@ DecisionNode SDK specification.
   client's memory (256 entries, until 5 minutes before they expire) and reused whatever their
   size; concurrent requests with the same bytes share one upload. A stale upload the client placed
   is uploaded again and the request resent once. `upload(images)` uploads explicitly.
-- The API's fixed request rules are checked locally and raise the API's own class
-  (`BadRequestError`, or `ValidationError` with its entries for a number grid fault or an empty
-  score) before any request: option and level counts, a `truth` without text, number grids.
+- Every fixed, documented request rule is checked locally, in the server's order, before
+  anything is sent, and raises what the API would answer: the same class and `error_type`, the
+  documented message, and for a 422 a `ValidationError` with the API's entries. Covered: the
+  128-level nesting limit; unknown question types (a `number` question on `systemone` included);
+  questions without a type or criteria, and instructions, states, descriptions or levels of the
+  wrong type; option and level counts; a `truth` without text; number grids (`float_type`,
+  finiteness, 2^53, decimals, the decimal bound, `min` above `max`, 4,096 values) and a missing
+  instruction; image count, empty or repeated ids, bytes, size, pixels and an upload reference's
+  media type; URLs that are not `https`, over 2,048 characters, with user information, on a port
+  other than 443 or on a literal blocked address (`image_url_refused`); session `window` and
+  `ttl_seconds`; frames (`Session.send` throws, writes nothing and uses no `seq`); batch
+  `custom_id` rules and an empty add; `batches.list` paging. Limits only `/v1/models` states
+  (number support, sessions served, `max_window`, `requests_per_batch`, `max_custom_id_chars`) are
+  checked once `models()` has been called on the client, and left to the server otherwise.
+- A storage `PUT` answered 403 after its URL's 5 minutes (counted from the presign's
+  `expires_in`) is presigned again once; a second such 403 raises.
 - Sessions over the JDK's WebSocket: `openSession`, `Session.connect`, `send` (frames numbered
   from 1), `replies`, `nextEvent`, `end`, the `Reply`, `FrameError` and `SessionClosed` values,
   `SessionLimitError` (a `RateLimitError`), and `supervise`, which reopens on the reopen codes
@@ -43,7 +56,8 @@ DecisionNode SDK specification.
 
 - `SPEC_VERSION` is `"1.1"`.
 - Image bytes that are not JPEG, PNG or WebP raise `BadRequestError` before any request, no
-  longer `IllegalArgumentException` when the `Image` is made. A file that cannot be read still
+  longer `IllegalArgumentException` when the `Image` is made. A batch `add` with no requests
+  raises `BadRequestError` (`api_usage_error`) rather than `IllegalArgumentException`. A file that cannot be read still
   throws `IllegalArgumentException` where the `Image` is made.
 - `Answer` permits `NumberAnswer`: an exhaustive `switch` or Kotlin `when` over it gains a
   branch.

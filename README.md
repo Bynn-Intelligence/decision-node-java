@@ -375,15 +375,34 @@ try {
 
 The async forms complete exceptionally with the same errors.
 
-A request the API would refuse for a fixed rule fails before anything is sent, with the API's own
-class, error type and message and no status or request id: an image that is not JPEG, PNG or WebP,
-over 10 MB or over 40 megapixels, more than 4 images, a URL that is not `https` or is over 2,048
-characters, a choice of no or more than 255 options, a score of more than 10 levels, a `truth`
-question with neither instructions nor criteria, or a number question without instructions raise
-`BadRequestError`; a number grid that cannot be built (`min` above `max`, `step` not above 0,
-more than 4,096 values) or a score without levels raise `ValidationError` with the API's entries.
-In `decideMany` one such request fails the whole call and nothing is sent. Token limits depend on
-the model and stay the server's to judge.
+A request the API would refuse for a fixed, documented rule fails before anything is sent, with
+what the API itself would answer: the same class and `errorType()`, the documented message, and
+for a 422 a `ValidationError` whose `entries()` are the API's list. A local error has no
+`status()` and no `requestId()`. The rules are checked in the server's order:
+
+- the 128-level nesting limit (`BadRequestError`, `api_usage_error`, "Invalid request.");
+- questions: an unknown type (a `number` question on `systemone` included), a missing type or
+  criteria, instructions, a state, a description or a level that is not a string, an object or
+  an array, a score without levels, and a number grid that cannot be built (`ValidationError`);
+  a choice of no or more than 255 options, a score of more than 10 levels, a `truth` with
+  neither instructions nor criteria, a number question without instructions (`BadRequestError`
+  with the API's plain message and no error type);
+- images: more than 4, an empty or repeated id, bytes that are not JPEG, PNG or WebP or not of
+  the type given, over 10 MB, over 40 megapixels, an upload reference of another media type
+  (`api_usage_error`); a URL that is not `https` (`api_usage_error`), or over 2,048 characters,
+  with user information, on a port other than 443 or on a literal private address
+  (`image_url_refused`);
+- sessions: `window` outside 1 to 64 and `ttl_seconds` outside 1 to 3,600 (`ValidationError`);
+  a frame without a value or an image, with an empty value, an unknown question id, a URL image
+  or an image that breaks the rules above: `send` throws `BadRequestError`, writes nothing and
+  uses no `seq`;
+- batches: a missing, empty, too long or repeated `custom_id`, an `add` with no requests, and
+  `list` paging outside its bounds (`api_usage_error`).
+
+Limits that only `GET /v1/models` states (a model without number questions or sessions, a smaller
+`max_window`, the batch limits) are checked once `models()` has been called on the client, and
+left to the server until then. In `decideMany` one faulty request fails the whole call and nothing
+is sent. Token limits depend on the model and stay the server's to judge.
 
 A problem with your own arguments is the JDK's `IllegalArgumentException`, thrown before
 anything is sent: an empty question map, a value that cannot be serialised to JSON, an image
@@ -477,7 +496,7 @@ The conformance suite is the language-neutral set of cases every DecisionNode SD
 needs Python 3.10 or later for its mock server. Every case runs twice, through the blocking
 methods and through the `...Async` methods. Without `DECISIONNODE_CONFORMANCE_DIR` the
 conformance task fails rather than skipping. The suite's mock serves uploads, sessions (a
-WebSocket) and batches as well; this SDK passes every case of suite 1.4 in both forms. CI checks the suite out at a pinned commit, set
+WebSocket) and batches as well; this SDK passes every case of suite 1.5 in both forms. CI checks the suite out at a pinned commit, set
 once as `CONFORMANCE_REF` in `.github/workflows/ci.yml`; every action there is pinned to a
 commit SHA and no checkout keeps its credentials.
 
