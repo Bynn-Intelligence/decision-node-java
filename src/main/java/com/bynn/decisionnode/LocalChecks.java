@@ -44,7 +44,8 @@ final class LocalChecks {
     static final int MAX_CUSTOM_ID_CHARS = 512;
     static final int LIST_LIMIT_MAX = 100;
     private static final BigDecimal TWO_53 = BigDecimal.valueOf(9007199254740992L);
-    private static final Set<String> DECIDE_TYPES = Set.of("truth", "noul", "choice", "score", "number");
+    private static final Set<String> DECIDE_TYPES = Set.of("truth", "noul", "choice", "score", "number", "point", "box");
+    private static final Set<String> UNITS = Set.of("pixels", "normalized");
     private static final Set<String> SYSTEMONE_TYPES = Set.of("noul", "choice", "score");
     private static final Set<String> MEDIA_TYPES = Set.of("image/jpeg", "image/png", "image/webp");
     private static final Pattern IPV4 = Pattern.compile("\\d{1,3}(\\.\\d{1,3}){3}");
@@ -64,11 +65,27 @@ final class LocalChecks {
      * counts them; the images themselves are checked by {@link #images}.
      */
     static void request(Map<String, Object> body, Profile profile, Map<String, Object> limits) {
-        request(body, profile, limits, List.of());
+        checkBody(body, profile, limits, List.of(), null);
     }
 
-    private static void request(Map<String, Object> body, Profile profile, Map<String, Object> limits,
-            List<Map<String, Object>> extra) {
+    /**
+     * {@link #request(Map, Profile, Map)} with the request's images, which a {@code point} or
+     * {@code box} question must name among: {@link Image}s or wire-form maps.
+     */
+    static void request(Map<String, Object> body, Profile profile, Map<String, Object> limits, List<?> images) {
+        List<String> ids = new ArrayList<>(images.size());
+        for (Object o : images) {
+            Object id = o instanceof Image ? ((Image) o).id() : wireMap(o).get("id");
+            if (id instanceof String) {
+                ids.add((String) id);
+            }
+        }
+        checkBody(body, profile, limits, List.of(), ids);
+    }
+
+    /** {@code imageIds} null leaves out the point and box rules on images (a session's open). */
+    private static void checkBody(Map<String, Object> body, Profile profile, Map<String, Object> limits,
+            List<Map<String, Object>> extra, List<String> imageIds) {
         nesting(body, 0);
         List<Map<String, Object>> entries = new ArrayList<>(extra);
         Object state = body.get("state");
@@ -79,7 +96,7 @@ final class LocalChecks {
         Map<String, Object> questions = Json.asMap(body.get("questions"));
         if (questions != null) {
             for (Map.Entry<String, Object> e : questions.entrySet()) {
-                DecisionNodeError fault = question(e.getKey(), e.getValue(), entries, profile, limits);
+                DecisionNodeError fault = question(e.getKey(), e.getValue(), entries, profile, limits, imageIds);
                 if (deferred == null) {
                     deferred = fault;
                 }
@@ -134,7 +151,7 @@ final class LocalChecks {
     }
 
     private static DecisionNodeError question(String qid, Object value, List<Map<String, Object>> entries,
-            Profile profile, Map<String, Object> limits) {
+            Profile profile, Map<String, Object> limits, List<String> imageIds) {
         List<Object> base = List.of("body", "questions", qid);
         Map<String, Object> q = wire(value);
         if (q == null && value != null && !scalar(value) && !(value instanceof Collection) && !value.getClass().isArray()) {
@@ -162,6 +179,9 @@ final class LocalChecks {
         }
         Object criteria = q.get("criteria");
         switch ((String) type) {
+            case "point":
+            case "box":
+                return place(qid, (String) type, q, loc, entries, imageIds);
             case "number": {
                 Long most = Json.asLong(limits.get("number_max_grid_values"));
                 if (most != null && most == 0) {
@@ -422,6 +442,41 @@ final class LocalChecks {
         return deepest;
     }
 
+    /**
+     * A {@code point} or {@code box} question: its image among the request's (the 422 entries),
+     * its units (a 422 entry), then its instructions (the plain 400). Without image ids (a
+     * session's open) the image rules are left out.
+     */
+    private static DecisionNodeError place(String qid, String type, Map<String, Object> q, List<Object> loc,
+            List<Map<String, Object>> entries, List<String> imageIds) {
+        if (imageIds != null) {
+            Object image = q.get("image");
+            if (imageIds.isEmpty()) {
+                entries.add(entry("image_required", loc, "A " + type + " question needs an image in the request", q, null));
+            } else if (image == null) {
+                if (imageIds.size() >= 2) {
+                    entries.add(entry("missing", append(loc, "image"), "Field required", q, null));
+                }
+            } else if (!(image instanceof String)) {
+                entries.add(entry("string_type", append(loc, "image"), "Input should be a valid string", image, null));
+            } else if (!imageIds.contains(image)) {
+                entries.add(entry("unknown_image", append(loc, "image"), "Input should be the id of an image of the request",
+                        image, null));
+            }
+        }
+        Object units = q.get("units");
+        if (units != null && !(units instanceof String && UNITS.contains(units))) {
+            entries.add(entry("literal_error", append(loc, "units"), "Input should be 'pixels' or 'normalized'", units,
+                    Map.of("expected", "'pixels' or 'normalized'")));
+        }
+        if (q.get("instructions") == null) {
+            String name = type.equals("point") ? "Point" : "Box";
+            return plain(name + " question must have instructions: " + qid,
+                    "question '" + qid + "': a " + type + " question needs instructions");
+        }
+        return null;
+    }
+
     // ------------------------------------------------------------------ images
 
     /** Every image of a request: the count, ids, URLs, upload references and local bytes. */
@@ -660,7 +715,7 @@ final class LocalChecks {
         }
         Map<String, Object> questions = new LinkedHashMap<>();
         questions.put("questions", body.get("questions"));
-        request(questions, Profile.DECIDE, limits, entries);
+        checkBody(questions, Profile.DECIDE, limits, entries, null);
         if (Boolean.FALSE.equals(sessions.get("enabled"))) {
             throw usage("Model " + limits.get("model") + " does not serve sessions.", null);
         }

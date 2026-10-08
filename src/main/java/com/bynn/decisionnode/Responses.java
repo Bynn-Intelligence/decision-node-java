@@ -112,6 +112,16 @@ final class Responses {
             if (choice instanceof String && confidence != null && p != null) {
                 return new ChoiceAnswer((String) choice, confidence, p, view);
             }
+        } else if ("point".equals(type)) {
+            double[] n = numbers(raw, "x", "y", "present", "confidence", "width", "height");
+            if (n != null && raw.get("image") instanceof String) {
+                return new PointAnswer(n[0], n[1], n[2], n[3], (String) raw.get("image"), n[4], n[5], view);
+            }
+        } else if ("box".equals(type)) {
+            double[] n = numbers(raw, "x1", "y1", "x2", "y2", "present", "confidence", "width", "height");
+            if (n != null && raw.get("image") instanceof String) {
+                return new BoxAnswer(n[0], n[1], n[2], n[3], n[4], n[5], (String) raw.get("image"), n[6], n[7], view);
+            }
         } else if ("score".equals(type)) {
             Double score = Json.asDouble(raw.get("score"));
             Double confidence = Json.asDouble(raw.get("confidence"));
@@ -122,6 +132,19 @@ final class Responses {
             }
         }
         return new UnknownAnswer(type instanceof String ? (String) type : null, view);
+    }
+
+    /** The numbers of these fields, in order; null when one is missing or not a JSON number. */
+    private static double[] numbers(Map<String, Object> raw, String... fields) {
+        double[] out = new double[fields.length];
+        for (int i = 0; i < fields.length; i++) {
+            Double v = Json.asDouble(raw.get(fields[i]));
+            if (v == null) {
+                return null;
+            }
+            out[i] = v;
+        }
+        return out;
     }
 
     /** A map of string keys to numbers, keys as sent and in order; null when it is not one. */

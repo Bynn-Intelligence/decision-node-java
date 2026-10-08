@@ -379,7 +379,7 @@ public final class DecisionNode {
         Map<String, Object> limits = limits((String) head.get("model"));
         List<Object> videos = request.videos();
         LocalChecks.request(LocalChecks.probe(head, images.size(), videos),
-                systemone ? LocalChecks.Profile.SYSTEMONE : LocalChecks.Profile.DECIDE, limits);
+                systemone ? LocalChecks.Profile.SYSTEMONE : LocalChecks.Profile.DECIDE, limits, images);
         LocalChecks.images(images, limits);
         List<Object> wires = LocalChecks.videos(videos, images, limits);
         if (!wires.isEmpty()) {

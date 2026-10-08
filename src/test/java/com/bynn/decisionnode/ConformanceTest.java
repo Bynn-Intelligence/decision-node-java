@@ -972,6 +972,26 @@ class ConformanceTest {
             n.put("expected", num.expected());
             n.put("confidence", num.confidence());
             n.put("probabilities", num.probabilities());
+        } else if (a instanceof PointAnswer pt) {
+            n.put("kind", "point");
+            n.put("x", pt.x());
+            n.put("y", pt.y());
+            n.put("present", pt.present());
+            n.put("confidence", pt.confidence());
+            n.put("image", pt.image());
+            n.put("width", pt.width());
+            n.put("height", pt.height());
+        } else if (a instanceof BoxAnswer bx) {
+            n.put("kind", "box");
+            n.put("x1", bx.x1());
+            n.put("y1", bx.y1());
+            n.put("x2", bx.x2());
+            n.put("y2", bx.y2());
+            n.put("present", bx.present());
+            n.put("confidence", bx.confidence());
+            n.put("image", bx.image());
+            n.put("width", bx.width());
+            n.put("height", bx.height());
         } else {
             n.put("kind", "unknown");
             n.put("type", a.type());
@@ -1455,6 +1475,14 @@ class ConformanceTest {
                     }
                     case "$image":
                         return image(map(decode(e.getValue(), ctx)));
+                    case "$point": {
+                        Map<String, Object> a = map(decode(e.getValue(), ctx));
+                        return Questions.point(a.get("instructions"), (String) a.get("image"), (String) a.get("units"));
+                    }
+                    case "$box": {
+                        Map<String, Object> a = map(decode(e.getValue(), ctx));
+                        return Questions.box(a.get("instructions"), (String) a.get("image"), (String) a.get("units"));
+                    }
                     case "$video": {
                         Map<String, Object> a = map(decode(e.getValue(), ctx));
                         Video v = Video.of((String) a.get("id"), listOrEmpty(a.get("frames")));

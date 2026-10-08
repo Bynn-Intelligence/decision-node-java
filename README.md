@@ -77,7 +77,7 @@ val d = dn.decide(
 )
 
 d.truth("escalate").truth()   // 0.94
-d["route"]                    // Answer: TruthAnswer, ChoiceAnswer, ScoreAnswer or UnknownAnswer
+d["route"]                    // Answer: TruthAnswer, ChoiceAnswer, ScoreAnswer, ... or UnknownAnswer
 ```
 
 ## Questions
@@ -88,6 +88,8 @@ d["route"]                    // Answer: TruthAnswer, ChoiceAnswer, ScoreAnswer 
 | `choice(instructions, options)` | `ChoiceAnswer` | `choice()`, `confidence()`, `probabilities()` by option name |
 | `score(instructions, levels)` | `ScoreAnswer` | `score()`, `confidence()`, `probabilities()` and `legend()` by level index |
 | `number(instructions)`, `number(instructions, min, max)`, `number(instructions, min, max, step)` | `NumberAnswer` | `number()`, `expected()`, `confidence()`, `probabilities()` by the value as the API wrote it (`"7"`, `"3.5"`) |
+| `point(instructions)`, `point(instructions, image, units)` | `PointAnswer` | `x()`, `y()`, `present()`, `confidence()`, `image()`, `width()`, `height()` |
+| `box(instructions)`, `box(instructions, image, units)` | `BoxAnswer` | `x1()`, `y1()`, `x2()`, `y2()`, `present()`, `confidence()`, `image()`, `width()`, `height()` |
 
 - `state`, instructions, descriptions and levels take a string or any value Jackson can
   serialise: maps, lists, records, POJOs.
@@ -98,10 +100,34 @@ d["route"]                    // Answer: TruthAnswer, ChoiceAnswer, ScoreAnswer 
 - `number` asks for a value on the grid `min`, `min + step`, ... up to `max`. A bound left null
   is left out of the request, so the API's default applies (0, 255 and 1). A grid holds at most
   4,096 values. Pass a `BigDecimal` to send an exact decimal.
+- `point` and `box` ask for a place in one of the request's images, below.
 - A plain map in the API's wire form is accepted wherever a builder is, so a request copied
   from the API reference runs unchanged.
 
-Answers are read by question id: `d.truth("id")`, `d.choice("id")`, `d.score("id")`, or
+A point or a box is a place in one of the request's images:
+
+```java
+Decision d = dn.decide(DecideRequest.builder()
+    .image(Image.fromUrl("belt", "https://files.example.com/line-3/cam-2/0917.jpg"))
+    .question("pick", point("Point to the yellow package closest to the robot arm."))
+    .question("damage", box("Draw a box around the damaged package.", "belt", null))
+    .question("any_damage", truth("Is any package on the belt damaged?"))
+    .build());
+PointAnswer pick = d.point("pick");     // x 812, y 455, present 0.97
+BoxAnswer damage = d.box("damage");     // x1 300, y1 120, x2 520, y2 410
+```
+
+`x` and `y` are measured from the top-left corner of the image, `x` to the right and `y` down; a
+box runs from its top-left corner (`x1`, `y1`) to its bottom-right corner (`x2`, `y2`). `units`
+is `"pixels"` (the default: pixels of the image as sent) or `"normalized"` (fractions of the
+width and the height). `present()` is the probability that what the instructions describe is in
+the image at all; `confidence()` the probability that the place is right if it is. `image()`,
+`width()` and `height()` name the image looked in and its size in pixels. The request needs an
+image, and `image` names the one to look in when it carries two or more (null leaves it out).
+`systemone` takes neither type.
+
+Answers are read by question id: `d.truth("id")`, `d.choice("id")`, `d.score("id")`,
+`d.number("id")`, `d.point("id")`, `d.box("id")`, or
 `d.get("id")` and `d.answers()` for the generic `Answer`. `Answer` is a sealed interface, so a
 `switch` or Kotlin `when` over it is exhaustive. An answer of a type newer than this SDK comes
 back as `UnknownAnswer` with its fields in `raw()`. So does an answer of a known type whose
@@ -424,12 +450,14 @@ for a 422 a `ValidationError` whose `entries()` are the API's list. A local erro
 `status()` and no `requestId()`. The rules are checked in the server's order:
 
 - the 128-level nesting limit (`BadRequestError`, `api_usage_error`, "Invalid request.");
-- questions: an unknown type (a `number` question on `systemone` included), a missing type or
-  criteria, instructions, a state, a description or a level that is not a string, an object or
-  an array, a score without levels, and a number grid that cannot be built (`ValidationError`);
-  a choice of no or more than 255 options, a score of more than 10 levels, a `truth` with
-  neither instructions nor criteria, a number question without instructions (`BadRequestError`
-  with the API's plain message and no error type);
+- questions: an unknown type (a `number`, `point` or `box` question on `systemone` included), a
+  missing type or criteria, instructions, a state, a description or a level that is not a
+  string, an object or an array, a score without levels, a number grid that cannot be built, and
+  a point or box in a request without images, without `image` among two or more images, naming
+  no image of the request, or with `units` other than `pixels` and `normalized`
+  (`ValidationError`); a choice of no or more than 255 options, a score of more than 10 levels,
+  a `truth` with neither instructions nor criteria, a number, point or box question without
+  instructions (`BadRequestError` with the API's plain message and no error type);
 - images: more than 16, an empty or repeated id, bytes that are not JPEG, PNG or WebP or not of
   the type given, over 10 MB, over 40 megapixels, an upload reference of another media type
   (`api_usage_error`); a URL that is not `https` (`api_usage_error`), or over 2,048 characters,
@@ -563,7 +591,7 @@ The conformance suite is the language-neutral set of cases every DecisionNode SD
 needs Python 3.10 or later for its mock server. Every case runs twice, through the blocking
 methods and through the `...Async` methods. Without `DECISIONNODE_CONFORMANCE_DIR` the
 conformance task fails rather than skipping. The suite's mock serves uploads, sessions (a
-WebSocket) and batches as well; this SDK passes every case of suite 1.7 in both forms. CI checks the suite out at a pinned commit, set
+WebSocket) and batches as well; this SDK passes every case of suite 1.8 in both forms. CI checks the suite out at a pinned commit, set
 once as `CONFORMANCE_REF` in `.github/workflows/ci.yml`; every action there is pinned to a
 commit SHA and no checkout keeps its credentials.
 

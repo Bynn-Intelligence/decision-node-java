@@ -6,10 +6,19 @@ All notable changes to this project are documented here. The format follows
 
 ## [0.2.0] - Unreleased
 
-Implements version 1.2 of the DecisionNode SDK specification: sixteen images and videos as frames.
+Implements version 1.2 of the DecisionNode SDK specification: sixteen images, videos as frames,
+and the point and box question types.
 
 ### Added
 
+- Point and box questions: `Questions.point` and `Questions.box`, each with an optional image id
+  and units (`pixels` or `normalized`), and the answers `PointAnswer` (`x`, `y`, `present`,
+  `confidence`, `image`, `width`, `height`) and `BoxAnswer` (`x1`, `y1`, `x2`, `y2` and the
+  same), read with `Decision.point` and `Decision.box`; `Answer` permits both. An answer with a
+  field missing or of the wrong type is an `UnknownAnswer`. Their rules are checked locally with
+  the API's 422 entries: an image in the request, `image` naming one of them (required with two
+  or more), and the units; a point or box without instructions is the API's 400. `systemone`
+  refuses both types locally, like number questions.
 - Videos sent as the frames the caller sampled: `Video` (`Video.of(id, frames)` with `fps`,
   `start` and `end`) and `VideoFrame` (`fromBytes`, `fromBase64`), on `DecideRequest` and
   `BatchRequest` (`video`, `videos`) and as a `videos` argument of `decide`, `systemone`, `check`,
