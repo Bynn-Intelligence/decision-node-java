@@ -63,6 +63,7 @@ class KotlinUsageTest {
             is TruthAnswer -> "truth ${answer.truth()}"
             is ChoiceAnswer -> "choice ${answer.choice()}"
             is ScoreAnswer -> "score ${answer.score()}"
+            is NumberAnswer -> "number ${answer.number()}"
             is UnknownAnswer -> "unknown ${answer.type()}"
         }
         assertEquals("truth 0.94", text)

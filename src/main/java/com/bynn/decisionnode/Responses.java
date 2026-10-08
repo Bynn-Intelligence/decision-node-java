@@ -16,28 +16,54 @@ import java.util.TreeMap;
 final class Responses {
     private Responses() {}
 
+    /** Reads a header by its lower-case name; null when absent. */
+    interface Headers {
+        String get(String lowerCaseName);
+    }
+
+    static Headers of(HttpHeaders headers) {
+        return name -> header(headers, name);
+    }
+
+    /** Headers kept as a map of lower-case names to values, as a batch result line carries them. */
+    static Headers of(Map<String, String> lowerCased) {
+        return name -> lowerCased == null ? null : lowerCased.get(name);
+    }
+
     static Decision decision(Map<String, Object> body, HttpHeaders headers) {
+        return decision(body, of(headers));
+    }
+
+    static Decision decision(Map<String, Object> body, Headers headers) {
+        Map<String, Object> usage = Json.asMap(body.get("usage"));
+        Object model = body.get("model");
+        return new Decision(
+                answers(body.get("answers")),
+                model instanceof String ? (String) model : null,
+                usage(usage),
+                headers.get("x-request-id"),
+                latency(headers.get("x-decisionnode-latency-ms")),
+                Safety.parse(headers.get("x-decisionnode-safety")),
+                body);
+    }
+
+    /** Typed answers by question id, in the order sent; empty when the value is not an object. */
+    static Map<String, Answer> answers(Object value) {
         Map<String, Answer> answers = new LinkedHashMap<>();
-        Map<String, Object> raw = Json.asMap(body.get("answers"));
+        Map<String, Object> raw = Json.asMap(value);
         if (raw != null) {
             for (Map.Entry<String, Object> e : raw.entrySet()) {
                 Map<String, Object> a = Json.asMap(e.getValue());
                 answers.put(e.getKey(), answer(a == null ? Map.of() : a));
             }
         }
-        Map<String, Object> usage = Json.asMap(body.get("usage"));
-        Usage u = usage == null
+        return answers;
+    }
+
+    static Usage usage(Map<String, Object> usage) {
+        return usage == null
                 ? new Usage(null, null)
                 : new Usage(Json.asLong(usage.get("input_tokens")), Json.asLong(usage.get("output_tokens")));
-        Object model = body.get("model");
-        return new Decision(
-                answers,
-                model instanceof String ? (String) model : null,
-                u,
-                header(headers, "x-request-id"),
-                latency(header(headers, "x-decisionnode-latency-ms")),
-                Safety.parse(header(headers, "x-decisionnode-safety")),
-                body);
     }
 
     /**
@@ -47,25 +73,27 @@ final class Responses {
     static Answer answer(Map<String, Object> raw) {
         Object type = raw.get("type");
         Map<String, Object> view = Collections.unmodifiableMap(raw);
-        if ("truth".equals(type)) {
-            Double truth = Json.asDouble(raw.get("truth"));
+        if ("truth".equals(type) || "noul".equals(type)) {
+            // /v1/systemone answers a truth question under the path's own wire type, with the
+            // value in the field of that name: the same answer.
+            Double truth = Json.asDouble(raw.get((String) type));
             if (truth != null) {
                 return new TruthAnswer(truth, view);
+            }
+        } else if ("number".equals(type)) {
+            Double number = Json.asDouble(raw.get("number"));
+            Double expected = Json.asDouble(raw.get("expected"));
+            Double confidence = Json.asDouble(raw.get("confidence"));
+            Map<String, Double> p = numbers(raw.get("probabilities"));
+            if (number != null && expected != null && confidence != null && p != null) {
+                return new NumberAnswer(number, expected, confidence, p, view);
             }
         } else if ("choice".equals(type)) {
             Object choice = raw.get("choice");
             Double confidence = Json.asDouble(raw.get("confidence"));
-            Map<String, Object> probs = Json.asMap(raw.get("probabilities"));
-            if (choice instanceof String && confidence != null && probs != null) {
-                Map<String, Double> p = new LinkedHashMap<>();
-                for (Map.Entry<String, Object> e : probs.entrySet()) {
-                    Double v = Json.asDouble(e.getValue());
-                    if (v == null) {
-                        return new UnknownAnswer((String) type, view);
-                    }
-                    p.put(e.getKey(), v);
-                }
-                return new ChoiceAnswer((String) choice, confidence, Collections.unmodifiableMap(p), view);
+            Map<String, Double> p = numbers(raw.get("probabilities"));
+            if (choice instanceof String && confidence != null && p != null) {
+                return new ChoiceAnswer((String) choice, confidence, p, view);
             }
         } else if ("score".equals(type)) {
             Double score = Json.asDouble(raw.get("score"));
@@ -77,6 +105,23 @@ final class Responses {
             }
         }
         return new UnknownAnswer(type instanceof String ? (String) type : null, view);
+    }
+
+    /** A map of string keys to numbers, keys as sent and in order; null when it is not one. */
+    private static Map<String, Double> numbers(Object value) {
+        Map<String, Object> m = Json.asMap(value);
+        if (m == null) {
+            return null;
+        }
+        Map<String, Double> out = new LinkedHashMap<>();
+        for (Map.Entry<String, Object> e : m.entrySet()) {
+            Double v = Json.asDouble(e.getValue());
+            if (v == null) {
+                return null;
+            }
+            out.put(e.getKey(), v);
+        }
+        return Collections.unmodifiableMap(out);
     }
 
     /**
@@ -135,7 +180,14 @@ final class Responses {
     }
 
     static DecisionNodeError error(int status, HttpHeaders headers, byte[] bodyBytes) {
-        Object body = Json.readOrNull(bodyBytes);
+        return error(status, of(headers), lowerCased(headers), Json.readOrNull(bodyBytes));
+    }
+
+    /**
+     * The error class and fields a status, its headers and its parsed body give: the rules of a
+     * live response, used for a batch result line too.
+     */
+    static DecisionNodeError error(int status, Headers headers, Map<String, List<String>> allHeaders, Object body) {
         Map<String, Object> obj = Json.asMap(body);
         Object detail = obj == null ? null : obj.get("detail");
         String errorType = null;
@@ -153,8 +205,8 @@ final class Responses {
             entries = Json.asList(detail);
         }
         ErrorInfo info = new ErrorInfo(
-                status, errorType, message == null ? "" : message, header(headers, "x-request-id"), header(headers, "x-decisionnode-error"),
-                body, lowerCased(headers));
+                status, errorType, message == null ? "" : message, headers.get("x-request-id"), headers.get("x-decisionnode-error"),
+                body, allHeaders);
         if (status == 400) {
             return "max_tokens_exceeded".equals(errorType) ? new ContextLimitError(info) : new BadRequestError(info);
         }
@@ -166,7 +218,7 @@ final class Responses {
         }
         if (status == 403) {
             if ("refusal_error".equals(errorType)) {
-                return new RefusalError(info, category, Safety.parse(header(headers, "x-decisionnode-safety")));
+                return new RefusalError(info, category, Safety.parse(headers.get("x-decisionnode-safety")));
             }
             return new PermissionDeniedError(info);
         }
@@ -177,6 +229,9 @@ final class Responses {
             return new ValidationError(info, entries);
         }
         if (status == 429) {
+            if (SessionLimitError.ERROR_TYPE.equals(errorType)) {
+                return new SessionLimitError(info, retryAfter(headers));
+            }
             return new RateLimitError(info, retryAfter(headers));
         }
         if (status == 529) {
@@ -209,12 +264,16 @@ final class Responses {
      * or as an HTTP date, else null. Capped at {@link #MAX_RETRY_AFTER}.
      */
     static Double retryAfter(HttpHeaders headers) {
+        return retryAfter(of(headers));
+    }
+
+    static Double retryAfter(Headers headers) {
         Double seconds = requestedWait(headers);
         return seconds == null || seconds.isNaN() ? null : Math.min(MAX_RETRY_AFTER, seconds);
     }
 
-    private static Double requestedWait(HttpHeaders headers) {
-        String ms = header(headers, "retry-after-ms");
+    private static Double requestedWait(Headers headers) {
+        String ms = headers.get("retry-after-ms");
         if (ms != null) {
             try {
                 return Math.max(0.0, Double.parseDouble(ms.trim()) / 1000.0);
@@ -222,7 +281,7 @@ final class Responses {
                 // fall through to Retry-After
             }
         }
-        String s = header(headers, "retry-after");
+        String s = headers.get("retry-after");
         if (s != null) {
             try {
                 return Math.max(0.0, Double.parseDouble(s.trim()));
@@ -254,7 +313,7 @@ final class Responses {
         return headers == null ? null : headers.firstValue(name).orElse(null);
     }
 
-    private static Map<String, List<String>> lowerCased(HttpHeaders headers) {
+    static Map<String, List<String>> lowerCased(HttpHeaders headers) {
         Map<String, List<String>> out = new TreeMap<>();
         if (headers != null) {
             headers.map().forEach((k, v) -> out.put(k.toLowerCase(java.util.Locale.ROOT), List.copyOf(v)));
@@ -262,7 +321,7 @@ final class Responses {
         return Collections.unmodifiableMap(out);
     }
 
-    private static String str(Object v) {
+    static String str(Object v) {
         return v instanceof String ? (String) v : null;
     }
 }

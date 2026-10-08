@@ -7,8 +7,8 @@ import java.util.Map;
 import java.util.Objects;
 
 /**
- * One question in its wire form, made by {@link Questions#truth}, {@link Questions#choice} or
- * {@link Questions#score}. A plain map in the same wire form is accepted wherever a
+ * One question in its wire form, made by {@link Questions#truth}, {@link Questions#choice},
+ * {@link Questions#score} or {@link Questions#number}. A plain map in the same wire form is accepted wherever a
  * {@code Question} is.
  */
 public final class Question {
@@ -18,7 +18,7 @@ public final class Question {
         this.wire = Collections.unmodifiableMap(new LinkedHashMap<>(wire));
     }
 
-    /** The question type: {@code truth}, {@code choice} or {@code score}. */
+    /** The question type: {@code truth}, {@code choice}, {@code score} or {@code number}. */
     public String type() {
         return (String) wire.get("type");
     }

@@ -1,11 +1,7 @@
 package com.bynn.decisionnode;
 
-import java.io.IOException;
 import java.net.URI;
 import java.net.http.HttpClient;
-import java.net.http.HttpRequest;
-import java.net.http.HttpResponse;
-import java.net.http.HttpTimeoutException;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -14,15 +10,8 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
-import java.util.concurrent.CancellationException;
+import java.util.Set;
 import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.CompletionException;
-import java.util.concurrent.ExecutionException;
-import java.util.concurrent.ScheduledFuture;
-import java.util.concurrent.ScheduledThreadPoolExecutor;
-import java.util.concurrent.ThreadLocalRandom;
-import java.util.concurrent.TimeUnit;
-import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.Function;
 import javax.net.ssl.SSLContext;
@@ -42,7 +31,7 @@ import javax.net.ssl.SSLContext;
  *
  * <p>Every method has a blocking form and an {@code ...Async} form that returns a
  * {@link CompletableFuture}. A client is safe to share between threads and reuses its
- * connections; create one and keep it.
+ * connections (HTTP/2 over TLS); create one and keep it.
  *
  * <p>The API key, base URL and model fall back to {@code DECISIONNODE_API_KEY},
  * {@code DECISIONNODE_BASE_URL} and {@code DECISIONNODE_MODEL}; an empty string counts as not
@@ -51,44 +40,35 @@ import javax.net.ssl.SSLContext;
  * be {@code https}; plain {@code http} is accepted only for {@code localhost}, {@code 127.0.0.1}
  * and {@code ::1}. Each attempt's timeout covers it whole, up to the last byte of the body.
  *
- * <p>Problems with the caller's own arguments throw {@link IllegalArgumentException} before
- * anything is sent.
+ * <p>Every request is checked against the API's fixed rules before it is sent (images, option and
+ * level counts, number grids), so a request the API would refuse fails at once with the API's own
+ * error class and costs no round trip. Problems with the caller's own arguments throw
+ * {@link IllegalArgumentException} before anything is sent.
  */
 public final class DecisionNode {
     /** This SDK's version, sent in the {@code User-Agent} header. */
     public static final String VERSION = "0.1.0";
     /** The version of the DecisionNode SDK specification this SDK implements. */
-    public static final String SPEC_VERSION = "1.0";
+    public static final String SPEC_VERSION = "1.1";
+    /**
+     * The inline threshold in bytes: a request's local images that total under it are sent inline
+     * as base64; at or above it they are uploaded once and sent by upload id. Change it per client
+     * with {@link Builder#inlineThreshold(long)}.
+     */
+    public static final int DEFAULT_INLINE_THRESHOLD = 524_288;
     public static final String DEFAULT_BASE_URL = "https://api.decisionnode.com";
     public static final String DEFAULT_MODEL = "decisionnode-latest";
     public static final Duration DEFAULT_TIMEOUT = Duration.ofSeconds(10);
     public static final int DEFAULT_MAX_RETRIES = 2;
     public static final int DEFAULT_CONCURRENCY = 8;
 
-    private static final String USER_AGENT = "decisionnode-java/" + VERSION;
-    private static final System.Logger LOG = System.getLogger("com.bynn.decisionnode");
+    /** The {@code error_type}s that say an upload this client placed is no longer usable. */
+    private static final Set<String> STALE_UPLOAD = Set.of("upload_expired", "upload_consumed", "upload_not_found", "upload_incomplete");
 
-    /** One daemon thread that cancels attempts whose time is up. */
-    private static final ScheduledThreadPoolExecutor DEADLINES = deadlines();
-
-    private static ScheduledThreadPoolExecutor deadlines() {
-        ScheduledThreadPoolExecutor ex = new ScheduledThreadPoolExecutor(1, r -> {
-            Thread t = new Thread(r, "decisionnode-deadline");
-            t.setDaemon(true);
-            return t;
-        });
-        ex.setRemoveOnCancelPolicy(true);
-        return ex;
-    }
-
-    private final String apiKey;
-    private final String baseUrl;
     private final String model;
-    private final Duration timeout;
-    private final int maxRetries;
-    private final Map<String, String> headers;
-    private final HttpClient http;
-    private final Function<Long, CompletableFuture<Void>> waiter;
+    private final long inlineThreshold;
+    private final Transport transport;
+    private final Uploads uploads;
 
     /** A client configured from the environment. */
     public DecisionNode() {
@@ -102,42 +82,47 @@ public final class DecisionNode {
 
     private DecisionNode(Builder b) {
         Function<String, String> env = b.environment;
-        this.apiKey = firstNonEmpty(b.apiKey, env.apply("DECISIONNODE_API_KEY"));
+        String apiKey = firstNonEmpty(b.apiKey, env.apply("DECISIONNODE_API_KEY"));
         String url = firstNonEmpty(b.baseUrl, env.apply("DECISIONNODE_BASE_URL"));
         url = url == null ? DEFAULT_BASE_URL : url;
         while (url.endsWith("/")) {
             url = url.substring(0, url.length() - 1);
         }
-        this.baseUrl = checkBaseUrl(url);
+        String baseUrl = checkBaseUrl(url);
         String m = firstNonEmpty(b.model, env.apply("DECISIONNODE_MODEL"));
         this.model = m == null ? DEFAULT_MODEL : m;
-        this.timeout = b.timeout == null ? DEFAULT_TIMEOUT : b.timeout;
-        this.maxRetries = b.maxRetries == null ? DEFAULT_MAX_RETRIES : b.maxRetries;
-        if (this.timeout.isNegative() || this.timeout.isZero()) {
-            throw new IllegalArgumentException("timeout must be above 0, got " + this.timeout);
+        Duration timeout = b.timeout == null ? DEFAULT_TIMEOUT : b.timeout;
+        int maxRetries = b.maxRetries == null ? DEFAULT_MAX_RETRIES : b.maxRetries;
+        if (timeout.isNegative() || timeout.isZero()) {
+            throw new IllegalArgumentException("timeout must be above 0, got " + timeout);
         }
-        if (this.maxRetries < 0) {
-            throw new IllegalArgumentException("maxRetries must be 0 or more, got " + this.maxRetries);
+        if (maxRetries < 0) {
+            throw new IllegalArgumentException("maxRetries must be 0 or more, got " + maxRetries);
         }
-        this.headers = Collections.unmodifiableMap(new LinkedHashMap<>(b.headers));
-        this.waiter = b.waiter != null ? b.waiter : DecisionNode::delay;
-        boolean https = this.baseUrl.regionMatches(true, 0, "https:", 0, 6);
+        this.inlineThreshold = b.inlineThreshold == null ? DEFAULT_INLINE_THRESHOLD : b.inlineThreshold;
+        Map<String, String> headers = Collections.unmodifiableMap(new LinkedHashMap<>(b.headers));
+        boolean https = baseUrl.regionMatches(true, 0, "https:", 0, 6);
+        HttpClient http;
         if (b.httpClient != null) {
             TransportCheck.checkRedirects(b.httpClient);
-            this.http = b.httpClient;
+            http = b.httpClient;
         } else {
             HttpClient.Builder hb = HttpClient.newBuilder()
-                    .connectTimeout(this.timeout)
+                    .connectTimeout(timeout)
                     .followRedirects(HttpClient.Redirect.NEVER);
-            // HTTP/2 is negotiated over TLS; a plain-HTTP base URL (a local or self-hosted
-            // server) is spoken to in HTTP/1.1 rather than through an upgrade attempt.
+            // HTTP/2 is negotiated over TLS, so every call of the client shares one connection; a
+            // plain-HTTP base URL (a local or self-hosted server) is spoken to in HTTP/1.1 rather
+            // than through an upgrade attempt.
             hb.version(https ? HttpClient.Version.HTTP_2 : HttpClient.Version.HTTP_1_1);
-            this.http = hb.build();
+            http = hb.build();
         }
         if (https) {
             // TLS must check certificates and hostnames, or https protects nothing.
             TransportCheck.checkTls(b.httpClient);
         }
+        this.transport = new Transport(apiKey, baseUrl, timeout, maxRetries, headers, http,
+                b.waiter != null ? b.waiter : Transport::delay);
+        this.uploads = new Uploads(transport, inlineThreshold);
     }
 
     public static Builder builder() {
@@ -165,8 +150,7 @@ public final class DecisionNode {
             return url;
         }
         if (scheme.equals("http")) {
-            String h = host.toLowerCase(java.util.Locale.ROOT);
-            if (h.equals("localhost") || h.equals("127.0.0.1") || h.equals("[::1]") || h.equals("::1")) {
+            if (isLoopback(host)) {
                 return url;
             }
             throw new IllegalArgumentException(
@@ -175,9 +159,18 @@ public final class DecisionNode {
         throw new IllegalArgumentException("base URL must use https: " + url);
     }
 
+    /** {@code localhost}, {@code 127.0.0.1} or {@code ::1}, compared whole. */
+    static boolean isLoopback(String host) {
+        if (host == null) {
+            return false;
+        }
+        String h = host.toLowerCase(java.util.Locale.ROOT);
+        return h.equals("localhost") || h.equals("127.0.0.1") || h.equals("[::1]") || h.equals("::1");
+    }
+
     /** The base URL requests go to, without a trailing slash. */
     public String baseUrl() {
-        return baseUrl;
+        return transport.baseUrl;
     }
 
     /** The model sent when a call names none. */
@@ -186,18 +179,31 @@ public final class DecisionNode {
     }
 
     public Duration timeout() {
-        return timeout;
+        return transport.timeout;
     }
 
     public int maxRetries() {
-        return maxRetries;
+        return transport.maxRetries;
+    }
+
+    /** The inline threshold in bytes; see {@link #DEFAULT_INLINE_THRESHOLD}. */
+    public long inlineThreshold() {
+        return inlineThreshold;
+    }
+
+    Transport transport() {
+        return transport;
+    }
+
+    Uploads uploads() {
+        return uploads;
     }
 
     // ------------------------------------------------------------------ decide
 
     /** Sends one decision. See {@link #decide(Object, Map, List, String)}. */
     public Decision decide(DecideRequest request) {
-        return await(decideAsync(request));
+        return Transport.await(decideAsync(request));
     }
 
     /** Sends one decision without a state. */
@@ -222,37 +228,21 @@ public final class DecisionNode {
      * @param questions the questions by id: {@link Question}s or wire-form maps; at least one
      * @param images    {@link Image}s or wire-form maps; may be null
      * @param model     the model for this call; null or empty for the client's
-     * @throws DecisionNodeError or one of its subclasses
+     * @throws DecisionNodeError or one of its subclasses; {@link BadRequestError} or
+     *     {@link ValidationError} before anything is sent for a request the API would refuse
      */
     public Decision decide(Object state, Map<String, ?> questions, List<?> images, String model) {
         return decide(DecideRequest.builder().state(state).questions(questions).images(images).model(model).build());
     }
 
     public CompletableFuture<Decision> decideAsync(DecideRequest request) {
-        byte[] payload;
+        Plan plan;
         try {
-            payload = payload(request);
-        } catch (IllegalArgumentException e) {
+            plan = plan("/v1/decide", request, false);
+        } catch (RuntimeException e) {
             return CompletableFuture.failedFuture(e);
         }
-        return decidePayload(payload);
-    }
-
-    private CompletableFuture<Decision> decidePayload(byte[] payload) {
-        return sendBytes("POST", "/v1/decide", payload).thenApply(r -> Responses.decision(r.object(), r.headers()));
-    }
-
-    /**
-     * The JSON body of one decision. Every check of the caller's arguments happens here, so a
-     * request that passes it is sent as it is.
-     *
-     * @throws IllegalArgumentException when the request is not one that can be sent
-     */
-    private byte[] payload(DecideRequest request) {
-        if (request == null) {
-            throw new IllegalArgumentException("request must not be null");
-        }
-        return Json.write(body(request));
+        return send(plan).thenApply(r -> Responses.decision(r.object(), r.headers()));
     }
 
     public CompletableFuture<Decision> decideAsync(Object state, Map<String, ?> questions) {
@@ -263,23 +253,175 @@ public final class DecisionNode {
         return decideAsync(DecideRequest.builder().state(state).questions(questions).images(images).model(model).build());
     }
 
-    private Map<String, Object> body(DecideRequest request) {
+    // ------------------------------------------------------------------ systemone
+
+    /** Sends one {@code POST /v1/systemone}. See {@link #systemone(Object, Map, List, String)}. */
+    public Decision systemone(Object state, Map<String, ?> questions) {
+        return systemone(state, questions, null, null);
+    }
+
+    /**
+     * Sends one {@code POST /v1/systemone}, the strict path that takes {@code truth},
+     * {@code choice} and {@code score} questions. The model is always sent: the given one, else
+     * the client's. A {@code truth} question is written in the wire type that path takes; its
+     * answer comes back as a {@link TruthAnswer}. Images are sent as on {@link #decide}.
+     */
+    public Decision systemone(Object state, Map<String, ?> questions, List<?> images, String model) {
+        return systemone(DecideRequest.builder().state(state).questions(questions).images(images).model(model).build());
+    }
+
+    /** {@link #systemone(Object, Map, List, String)} from a {@link DecideRequest}. */
+    public Decision systemone(DecideRequest request) {
+        return Transport.await(systemoneAsync(request));
+    }
+
+    public CompletableFuture<Decision> systemoneAsync(Object state, Map<String, ?> questions) {
+        return systemoneAsync(state, questions, null, null);
+    }
+
+    public CompletableFuture<Decision> systemoneAsync(Object state, Map<String, ?> questions, List<?> images, String model) {
+        return systemoneAsync(DecideRequest.builder().state(state).questions(questions).images(images).model(model).build());
+    }
+
+    public CompletableFuture<Decision> systemoneAsync(DecideRequest request) {
+        Plan plan;
+        try {
+            plan = plan("/v1/systemone", request, true);
+        } catch (RuntimeException e) {
+            return CompletableFuture.failedFuture(e);
+        }
+        return send(plan).thenApply(r -> Responses.decision(r.object(), r.headers()));
+    }
+
+    // ------------------------------------------------------------------ one request, checked and sent
+
+    /**
+     * A request checked and ready to send. {@code payload} is the finished body when its images
+     * go inline (or there are none); null when some must be uploaded first.
+     */
+    private record Plan(String path, Map<String, Object> head, List<Object> images, byte[] payload, Set<String> placed) {}
+
+    /**
+     * Checks a request and prepares its body. Every check happens here, before anything is sent:
+     * the caller's arguments ({@link IllegalArgumentException}), then the API's fixed rules (the
+     * API's own error class).
+     */
+    private Plan plan(String path, DecideRequest request, boolean systemone) {
+        if (request == null) {
+            throw new IllegalArgumentException("request must not be null");
+        }
         if (request.questions().isEmpty()) {
             throw new IllegalArgumentException("questions must hold at least one question");
         }
-        Map<String, Object> body = new LinkedHashMap<>();
+        List<Object> images = request.images();
+        LocalChecks.images(images);
+        LocalChecks.questions(request.questions());
+        Map<String, Object> head = new LinkedHashMap<>();
         String m = request.model();
-        body.put("model", m != null && !m.isEmpty() ? m : model);
-        body.put("state", request.state() == null ? "" : request.state());
-        body.put("questions", request.questions());
-        if (!request.images().isEmpty()) {
-            List<Object> images = new ArrayList<>();
-            for (Object img : request.images()) {
-                images.add(img instanceof Image ? ((Image) img).toMap() : img);
-            }
-            body.put("images", images);
+        head.put("model", m != null && !m.isEmpty() ? m : model);
+        head.put("state", request.state() == null ? "" : request.state());
+        head.put("questions", systemone ? strict(request.questions()) : request.questions());
+        if (images.isEmpty()) {
+            return new Plan(path, head, images, Json.write(head), Set.of());
         }
-        return body;
+        CompletableFuture<Uploads.Wires> wires = needsUpload(images) ? null : uploads.wires(images, true, false);
+        if (wires != null && wires.isDone()) {
+            Uploads.Wires w = wires.join();
+            Map<String, Object> body = new LinkedHashMap<>(head);
+            body.put("images", w.wires());
+            return new Plan(path, head, images, Json.write(body), w.placed());
+        }
+        // Some images go up first: a body that cannot be serialised fails before any upload.
+        Json.write(head);
+        return new Plan(path, head, images, null, Set.of());
+    }
+
+    /** True when some local image of the request is to be uploaded rather than sent inline. */
+    private boolean needsUpload(List<Object> images) {
+        long total = 0;
+        boolean uncached = false;
+        for (Object o : images) {
+            if (o instanceof Image && ((Image) o).isLocal()) {
+                Image img = (Image) o;
+                total += img.size();
+                uncached |= uploads.cached(img) == null;
+            }
+        }
+        return uncached && total >= inlineThreshold;
+    }
+
+    /** {@code truth} written in the wire type {@code /v1/systemone} takes for it. */
+    private static Map<String, Object> strict(Map<String, Object> questions) {
+        Map<String, Object> out = new LinkedHashMap<>();
+        for (Map.Entry<String, Object> e : questions.entrySet()) {
+            Map<String, Object> q = LocalChecks.wire(e.getValue());
+            if (q != null && "truth".equals(q.get("type"))) {
+                Map<String, Object> copy = new LinkedHashMap<>(q);
+                copy.put("type", "noul");
+                out.put(e.getKey(), copy);
+            } else {
+                out.put(e.getKey(), e.getValue());
+            }
+        }
+        return out;
+    }
+
+    /**
+     * Sends a planned request. When the API calls an upload this client placed stale (expired,
+     * consumed, not found or incomplete), those entries leave the cache, the images go again, and
+     * the request is sent once more; that is not counted as a retry.
+     */
+    private CompletableFuture<Transport.Response> send(Plan plan) {
+        CompletableFuture<Transport.Response> first = plan.payload() != null
+                ? transport.json("POST", plan.path(), plan.payload(), Transport.Policy.DEFAULT)
+                        .exceptionallyCompose(err -> CompletableFuture.failedFuture(stale(err, plan.placed())))
+                : sendWithImages(plan);
+        return first.exceptionallyCompose(err -> {
+            Throwable cause = Transport.unwrap(err);
+            if (cause instanceof StaleUpload) {
+                StaleUpload stale = (StaleUpload) cause;
+                uploads.drop(stale.placed);
+                return sendWithImages(plan).exceptionally(e2 -> {
+                    Throwable c2 = Transport.unwrap(e2);
+                    throw c2 instanceof StaleUpload ? ((StaleUpload) c2).error : asUnchecked(c2);
+                });
+            }
+            return CompletableFuture.failedFuture(cause);
+        });
+    }
+
+    private CompletableFuture<Transport.Response> sendWithImages(Plan plan) {
+        return uploads.wires(plan.images(), true, false).thenCompose(w -> {
+            Map<String, Object> body = new LinkedHashMap<>(plan.head());
+            body.put("images", w.wires());
+            return transport.json("POST", plan.path(), Json.write(body), Transport.Policy.DEFAULT)
+                    .exceptionallyCompose(err -> CompletableFuture.failedFuture(stale(err, w.placed())));
+        });
+    }
+
+    /** A stale-upload answer for uploads this client placed, carried to the resend. */
+    private static final class StaleUpload extends RuntimeException {
+        private static final long serialVersionUID = 1L;
+        final transient Set<String> placed;
+        final BadRequestError error;
+
+        StaleUpload(BadRequestError error, Set<String> placed) {
+            super(error.getMessage(), null, false, false);
+            this.error = error;
+            this.placed = placed;
+        }
+    }
+
+    private static Throwable stale(Throwable err, Set<String> placed) {
+        Throwable cause = Transport.unwrap(err);
+        if (!placed.isEmpty() && cause instanceof BadRequestError && STALE_UPLOAD.contains(((BadRequestError) cause).errorType())) {
+            return new StaleUpload((BadRequestError) cause, placed);
+        }
+        return cause;
+    }
+
+    private static RuntimeException asUnchecked(Throwable t) {
+        return t instanceof RuntimeException ? (RuntimeException) t : new DecisionNodeError(String.valueOf(t), t);
     }
 
     // ------------------------------------------------------------------ decideMany
@@ -291,13 +433,17 @@ public final class DecisionNode {
 
     /**
      * Sends every request, at most {@code concurrency} at a time, each with its own retries.
+     * Every request is checked before any is sent.
      *
      * @return one result per request, in input order: a decision or the error that request ended
      *     with. One failure does not stop the others.
-     * @throws IllegalArgumentException when {@code concurrency} is below 1; nothing is sent
+     * @throws IllegalArgumentException when {@code concurrency} is below 1 or a request is not one
+     *     that can be sent; nothing is sent
+     * @throws BadRequestError or {@link ValidationError} when a request breaks the API's fixed
+     *     rules; nothing is sent
      */
     public List<DecisionResult> decideMany(List<DecideRequest> requests, int concurrency) {
-        return await(decideManyAsync(requests, concurrency));
+        return Transport.await(decideManyAsync(requests, concurrency));
     }
 
     public CompletableFuture<List<DecisionResult>> decideManyAsync(List<DecideRequest> requests) {
@@ -305,8 +451,8 @@ public final class DecisionNode {
     }
 
     /**
-     * {@link #decideMany(List, int)}. A {@code concurrency} below 1 or an invalid request throws
-     * {@link IllegalArgumentException} from this method itself, before anything is sent.
+     * {@link #decideMany(List, int)}. A {@code concurrency} below 1, an invalid request or one
+     * that breaks the API's fixed rules throws from this method itself, before anything is sent.
      */
     public CompletableFuture<List<DecisionResult>> decideManyAsync(List<DecideRequest> requests, int concurrency) {
         if (concurrency < 1) {
@@ -317,10 +463,10 @@ public final class DecisionNode {
         }
         // Every request is checked before any is sent: one invalid request is the caller's
         // mistake, so the whole call fails and nothing goes out.
-        List<byte[]> items = new ArrayList<>(requests.size());
+        List<Plan> items = new ArrayList<>(requests.size());
         for (int i = 0; i < requests.size(); i++) {
             try {
-                items.add(payload(requests.get(i)));
+                items.add(plan("/v1/decide", requests.get(i), false));
             } catch (IllegalArgumentException e) {
                 throw new IllegalArgumentException("requests[" + i + "]: " + e.getMessage(), e);
             }
@@ -335,14 +481,14 @@ public final class DecisionNode {
         return CompletableFuture.allOf(running).thenApply(v -> Collections.unmodifiableList(Arrays.asList(out)));
     }
 
-    private CompletableFuture<Void> worker(List<byte[]> items, DecisionResult[] out, AtomicInteger next) {
+    private CompletableFuture<Void> worker(List<Plan> items, DecisionResult[] out, AtomicInteger next) {
         int i = next.getAndIncrement();
         if (i >= items.size()) {
             return CompletableFuture.completedFuture(null);
         }
         CompletableFuture<Decision> call;
         try {
-            call = decidePayload(items.get(i));
+            call = send(items.get(i)).thenApply(r -> Responses.decision(r.object(), r.headers()));
         } catch (RuntimeException e) {
             call = CompletableFuture.failedFuture(e);
         }
@@ -371,7 +517,7 @@ public final class DecisionNode {
 
     /** One {@code truth} question with criteria, images and a model, sent under the id {@code check}. */
     public TruthAnswer check(Object state, Object instructions, Object ifTrue, Object ifFalse, List<?> images, String model) {
-        return await(checkAsync(state, instructions, ifTrue, ifFalse, images, model));
+        return Transport.await(checkAsync(state, instructions, ifTrue, ifFalse, images, model));
     }
 
     public CompletableFuture<TruthAnswer> checkAsync(Object state, Object instructions) {
@@ -399,12 +545,12 @@ public final class DecisionNode {
 
     /** {@link #classify(Object, Object, Map)} with images and a model. */
     public ChoiceAnswer classify(Object state, Object instructions, Map<String, ?> options, List<?> images, String model) {
-        return await(classifyAsync(state, instructions, options, images, model));
+        return Transport.await(classifyAsync(state, instructions, options, images, model));
     }
 
     /** {@link #classify(Object, Object, List)} with images and a model. */
     public ChoiceAnswer classify(Object state, Object instructions, List<String> options, List<?> images, String model) {
-        return await(classifyAsync(state, instructions, options, images, model));
+        return Transport.await(classifyAsync(state, instructions, options, images, model));
     }
 
     public CompletableFuture<ChoiceAnswer> classifyAsync(Object state, Object instructions, Map<String, ?> options) {
@@ -432,7 +578,7 @@ public final class DecisionNode {
 
     /** {@link #score(Object, Object, List)} with images and a model. */
     public ScoreAnswer score(Object state, Object instructions, List<?> levels, List<?> images, String model) {
-        return await(scoreAsync(state, instructions, levels, images, model));
+        return Transport.await(scoreAsync(state, instructions, levels, images, model));
     }
 
     public CompletableFuture<ScoreAnswer> scoreAsync(Object state, Object instructions, List<?> levels) {
@@ -444,19 +590,41 @@ public final class DecisionNode {
         return single(state, "score", Questions.score(instructions, levels), images, model, ScoreAnswer.class);
     }
 
+    /**
+     * One {@code number} question, sent under the id {@code number}: a value on the grid from
+     * {@code min} to {@code max} in steps of {@code step}. Each bound left null is left out, so
+     * the API's default applies (0, 255 and 1).
+     */
+    public NumberAnswer number(Object state, Object instructions, Number min, Number max, Number step) {
+        return number(state, instructions, min, max, step, null, null);
+    }
+
+    /** {@link #number(Object, Object, Number, Number, Number)} with images and a model. */
+    public NumberAnswer number(Object state, Object instructions, Number min, Number max, Number step, List<?> images, String model) {
+        return Transport.await(numberAsync(state, instructions, min, max, step, images, model));
+    }
+
+    public CompletableFuture<NumberAnswer> numberAsync(Object state, Object instructions, Number min, Number max, Number step) {
+        return numberAsync(state, instructions, min, max, step, null, null);
+    }
+
+    public CompletableFuture<NumberAnswer> numberAsync(
+            Object state, Object instructions, Number min, Number max, Number step, List<?> images, String model) {
+        return single(state, "number", Questions.number(instructions, min, max, step), images, model, NumberAnswer.class);
+    }
+
     private <T extends Answer> CompletableFuture<T> single(
             Object state, String id, Question q, List<?> images, String model, Class<T> type) {
-        DecideRequest request = DecideRequest.builder().state(state).question(id, q).images(images).model(model).build();
-        byte[] payload;
+        Plan plan;
         try {
-            payload = payload(request);
-        } catch (IllegalArgumentException e) {
+            plan = plan("/v1/decide", DecideRequest.builder().state(state).question(id, q).images(images).model(model).build(), false);
+        } catch (RuntimeException e) {
             return CompletableFuture.failedFuture(e);
         }
         // A helper promises a typed answer. When its own answer is missing, malformed or of
         // another type, the call fails with a ServerError carrying the server's reason, where
         // decide would return an UnknownAnswer.
-        return sendBytes("POST", "/v1/decide", payload).thenApply(r -> {
+        return send(plan).thenApply(r -> {
             Decision d = Responses.decision(r.object(), r.headers());
             Answer a = d.answers().get(id);
             if (!type.isInstance(a)) {
@@ -485,7 +653,7 @@ public final class DecisionNode {
 
     /** {@link #gate(Object, Object)} with images and a model. */
     public Decision gate(Object action, Object context, List<?> images, String model) {
-        return await(gateAsync(action, context, images, model));
+        return Transport.await(gateAsync(action, context, images, model));
     }
 
     public CompletableFuture<Decision> gateAsync(Object action, Object context) {
@@ -516,207 +684,93 @@ public final class DecisionNode {
                 .build());
     }
 
+    // ------------------------------------------------------------------ uploads
+
+    /**
+     * Uploads images now, whatever their size, and returns one upload id per image, in order:
+     * {@code POST /v1/uploads} once for the images not already uploaded by this client, then one
+     * {@code PUT} each, in parallel. An image already uploaded returns its cached id, and an
+     * {@link Image#fromUpload upload id} is returned as given. Pass the ids on with
+     * {@link Image#fromUpload(String, String)}; this client also reuses them by content on its
+     * own, so calling this first is never required.
+     *
+     * @throws IllegalArgumentException when an image is given by URL, which is never uploaded
+     * @throws BadRequestError before anything is sent, for an image the API would refuse
+     */
+    public List<String> upload(List<Image> images) {
+        return Transport.await(uploadAsync(images));
+    }
+
+    public CompletableFuture<List<String>> uploadAsync(List<Image> images) {
+        List<String> out = new ArrayList<>();
+        List<Integer> todo = new ArrayList<>();
+        try {
+            Objects.requireNonNull(images, "images");
+            LocalChecks.images(images);
+            for (int i = 0; i < images.size(); i++) {
+                Image img = images.get(i);
+                if (img.url() != null) {
+                    throw new IllegalArgumentException("image '" + img.id() + "' is given by URL; a URL is never uploaded");
+                }
+                String id = img.isLocal() ? uploads.cached(img) : img.uploadId();
+                out.add(id);
+                if (id == null) {
+                    todo.add(i);
+                }
+            }
+        } catch (RuntimeException e) {
+            return CompletableFuture.failedFuture(e);
+        }
+        if (todo.isEmpty()) {
+            return CompletableFuture.completedFuture(Collections.unmodifiableList(out));
+        }
+        List<Image> local = new ArrayList<>();
+        for (int i : todo) {
+            local.add(images.get(i));
+        }
+        return uploads.upload(local).thenApply(ids -> {
+            for (int n = 0; n < todo.size(); n++) {
+                out.set(todo.get(n), ids.get(n));
+            }
+            return Collections.unmodifiableList(out);
+        });
+    }
+
     // ------------------------------------------------------------------ models, raw
 
     /** {@code GET /v1/models}: the models with their published limits. */
     public List<ModelInfo> models() {
-        return await(modelsAsync());
+        return Transport.await(modelsAsync());
     }
 
     public CompletableFuture<List<ModelInfo>> modelsAsync() {
-        return send("GET", "/v1/models", null).thenApply(r -> Responses.models(r.object()));
+        return transport.json("GET", "/v1/models", null, Transport.Policy.DEFAULT).thenApply(r -> Responses.models(r.object()));
     }
 
     /**
-     * Sends {@code body} to {@code POST /v1/decide} exactly as given, without filling in a model,
-     * and returns the response body as parsed JSON. Use it for an API field this SDK version does
-     * not know yet. Errors and retries work as for {@link #decide}.
+     * Sends {@code body} to {@code POST /v1/decide} exactly as given, without filling in a model or
+     * checking anything, and returns the response body as parsed JSON. Use it for an API field this
+     * SDK version does not know yet. Errors and retries work as for {@link #decide}.
      */
     public Map<String, Object> decideRaw(Object body) {
-        return await(decideRawAsync(body));
+        return Transport.await(decideRawAsync(body));
     }
 
     public CompletableFuture<Map<String, Object>> decideRawAsync(Object body) {
-        return send("POST", "/v1/decide", Objects.requireNonNull(body, "body")).thenApply(Response::object);
-    }
-
-    // ------------------------------------------------------------------ transport
-
-    private record Response(int status, java.net.http.HttpHeaders headers, Map<String, Object> object) {}
-
-    private CompletableFuture<Response> send(String method, String path, Object body) {
         byte[] payload;
         try {
-            payload = body == null ? null : Json.write(body);
-        } catch (IllegalArgumentException e) {
-            return CompletableFuture.failedFuture(e);
-        }
-        return sendBytes(method, path, payload);
-    }
-
-    private CompletableFuture<Response> sendBytes(String method, String path, byte[] body) {
-        if (apiKey == null || apiKey.isEmpty()) {
-            return CompletableFuture.failedFuture(new AuthenticationError(
-                    "no API key: pass one to the client or set DECISIONNODE_API_KEY"));
-        }
-        HttpRequest request;
-        try {
-            HttpRequest.Builder rb = HttpRequest.newBuilder(URI.create(baseUrl + path))
-                    .timeout(timeout)
-                    .header("Authorization", "Bearer " + apiKey)
-                    .header("User-Agent", USER_AGENT)
-                    .header("Accept", "application/json");
-            if (body != null) {
-                rb.header("Content-Type", "application/json");
-                rb.method(method, HttpRequest.BodyPublishers.ofByteArray(body));
-            } else {
-                rb.method(method, HttpRequest.BodyPublishers.noBody());
-            }
-            for (Map.Entry<String, String> h : headers.entrySet()) {
-                rb.setHeader(h.getKey(), h.getValue());
-            }
-            request = rb.build();
-        } catch (IllegalArgumentException e) {
-            return CompletableFuture.failedFuture(e);
-        }
-        return attempt(request, 0);
-    }
-
-    private CompletableFuture<Response> attempt(HttpRequest request, int attempt) {
-        long started = System.nanoTime();
-        CompletableFuture<HttpResponse<byte[]>> sent;
-        try {
-            sent = http.sendAsync(request, HttpResponse.BodyHandlers.ofByteArray());
+            payload = Json.write(Objects.requireNonNull(body, "body"));
         } catch (RuntimeException e) {
-            sent = CompletableFuture.failedFuture(e);
+            return CompletableFuture.failedFuture(e);
         }
-        // The timeout covers the whole attempt, from sending to the last byte of the body. The
-        // request's own timeout only covers the wait for the response headers, so an overall
-        // deadline cancels the exchange when it runs out.
-        AtomicBoolean expired = new AtomicBoolean();
-        CompletableFuture<HttpResponse<byte[]>> exchange = sent;
-        ScheduledFuture<?> deadline = DEADLINES.schedule(() -> {
-            if (!exchange.isDone()) {
-                expired.set(true);
-                exchange.cancel(true);
-            }
-        }, timeout.toNanos(), TimeUnit.NANOSECONDS);
-        return sent.handle((resp, exc) -> {
-            deadline.cancel(false);
-            long ms = TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - started);
-            if (exc != null) {
-                Throwable cause = unwrap(exc);
-                DecisionNodeError err = expired.get() && !(cause instanceof HttpTimeoutException)
-                        ? new TimeoutError("no complete response within " + timeout.toMillis() + " ms", cause)
-                        : transportError(cause);
-                debug(request, null, null, ms, attempt, err.getMessage());
-                if (retryable(err) && attempt < maxRetries) {
-                    return retryAfter(request, attempt, backoff(attempt));
-                }
-                return CompletableFuture.<Response>failedFuture(err);
-            }
-            int status = resp.statusCode();
-            String requestId = Responses.header(resp.headers(), "x-request-id");
-            debug(request, status, requestId, ms, attempt, null);
-            if (status >= 200 && status <= 299) {
-                Map<String, Object> obj;
-                try {
-                    obj = Json.asMap(Json.read(resp.body()));
-                } catch (IOException e) {
-                    obj = null;
-                }
-                if (obj == null) {
-                    return CompletableFuture.<Response>failedFuture(Responses.notJson(status, resp.headers(), resp.body()));
-                }
-                return CompletableFuture.completedFuture(new Response(status, resp.headers(), obj));
-            }
-            DecisionNodeError err = Responses.error(status, resp.headers(), resp.body());
-            if (retryableStatus(status) && attempt < maxRetries) {
-                Double wait = Responses.retryAfter(resp.headers());
-                return retryAfter(request, attempt, wait != null ? wait : backoff(attempt));
-            }
-            return CompletableFuture.<Response>failedFuture(err);
-        }).thenCompose(Function.identity());
+        return transport.json("POST", "/v1/decide", payload, Transport.Policy.DEFAULT).thenApply(Transport.Response::object);
     }
 
-    private CompletableFuture<Response> retryAfter(HttpRequest request, int attempt, double seconds) {
-        long millis = Math.max(0L, Math.round(Math.min(seconds, Responses.MAX_RETRY_AFTER) * 1000.0));
-        return waiter.apply(millis).thenCompose(v -> attempt(request, attempt + 1));
-    }
+    // ------------------------------------------------------------------ support
 
-    /** Completes after {@code millis} milliseconds without holding a thread. */
-    private static CompletableFuture<Void> delay(Long millis) {
-        return CompletableFuture.runAsync(() -> {}, CompletableFuture.delayedExecutor(millis, TimeUnit.MILLISECONDS));
-    }
-
-    static boolean retryableStatus(int status) {
-        return status == 408 || status == 429 || (status >= 500 && status <= 599);
-    }
-
-    private static boolean retryable(DecisionNodeError e) {
-        return e instanceof TimeoutError || e instanceof ConnectionError;
-    }
-
-    /** Exponential backoff from 0.5 s, capped at 8 s, with jitter, in seconds. */
-    static double backoff(int attempt) {
-        double base = Math.min(8.0, 0.5 * Math.pow(2, attempt));
-        return base * (0.75 + ThreadLocalRandom.current().nextDouble() * 0.25);
-    }
-
-    private DecisionNodeError transportError(Throwable t) {
-        if (t instanceof DecisionNodeError) {
-            return (DecisionNodeError) t;
-        }
-        if (t instanceof HttpTimeoutException) {
-            return new TimeoutError("no response within " + timeout.toMillis() + " ms", t);
-        }
-        if (t instanceof IOException) {
-            return new ConnectionError("connection error: " + t, t);
-        }
-        if (t instanceof CancellationException) {
-            return new DecisionNodeError("the request was cancelled", t);
-        }
-        return new DecisionNodeError("request failed: " + t, t);
-    }
-
-    private void debug(HttpRequest request, Integer status, String requestId, long ms, int attempt, String failure) {
-        if (!LOG.isLoggable(System.Logger.Level.DEBUG)) {
-            return;
-        }
-        LOG.log(System.Logger.Level.DEBUG, "{0} {1} -> {2} request_id={3} {4} ms attempt={5}",
-                request.method(), request.uri().getPath(), status != null ? status.toString() : failure,
-                requestId, ms, attempt + 1);
-    }
-
-    private static Throwable unwrap(Throwable t) {
-        while ((t instanceof CompletionException || t instanceof ExecutionException) && t.getCause() != null) {
-            t = t.getCause();
-        }
-        return t;
-    }
-
-    private static DecisionNodeError asError(Throwable t) {
-        t = unwrap(t);
+    static DecisionNodeError asError(Throwable t) {
+        t = Transport.unwrap(t);
         return t instanceof DecisionNodeError ? (DecisionNodeError) t : new DecisionNodeError(String.valueOf(t), t);
-    }
-
-    private static <T> T await(CompletableFuture<T> future) {
-        try {
-            return future.get();
-        } catch (ExecutionException e) {
-            Throwable cause = unwrap(e);
-            if (cause instanceof RuntimeException) {
-                throw (RuntimeException) cause;
-            }
-            if (cause instanceof Error) {
-                throw (Error) cause;
-            }
-            throw new DecisionNodeError(String.valueOf(cause), cause);
-        } catch (InterruptedException e) {
-            future.cancel(true);
-            Thread.currentThread().interrupt();
-            throw new DecisionNodeError("interrupted while waiting for the response", e);
-        }
     }
 
     private static String firstNonEmpty(String a, String b) {
@@ -733,6 +787,7 @@ public final class DecisionNode {
         private String model;
         private Duration timeout;
         private Integer maxRetries;
+        private Long inlineThreshold;
         private final Map<String, String> headers = new LinkedHashMap<>();
         private HttpClient httpClient;
         private Function<String, String> environment = System::getenv;
@@ -795,8 +850,25 @@ public final class DecisionNode {
         }
 
         /**
-         * A header sent on every request, for example {@code x-decisionnode-safety-body: true},
-         * which asks the API to put the safety check in the response body as well.
+         * The inline threshold in bytes: a request's local images (or a session frame's, or a
+         * batch line's) that total under it are sent inline as base64; at or above it they are
+         * uploaded and sent by upload id. Default: {@value DecisionNode#DEFAULT_INLINE_THRESHOLD}.
+         * 0 uploads every local image.
+         *
+         * @throws IllegalArgumentException when it is below 0
+         */
+        public Builder inlineThreshold(long bytes) {
+            if (bytes < 0) {
+                throw new IllegalArgumentException("inlineThreshold must be 0 or more, got " + bytes);
+            }
+            this.inlineThreshold = bytes;
+            return this;
+        }
+
+        /**
+         * A header sent on every API request and on a session's handshake, for example
+         * {@code x-decisionnode-safety-body: true}, which asks the API to put the safety check in
+         * the response body as well. It is never sent to storage with an upload.
          */
         public Builder header(String name, String value) {
             headers.put(Objects.requireNonNull(name, "name"), Objects.requireNonNull(value, "value"));
@@ -835,8 +907,9 @@ public final class DecisionNode {
         }
 
         /**
-         * How the wait between attempts is spent: given milliseconds, a future that completes when
-         * the next attempt may start. Tests replace it to record waits without sleeping.
+         * How a wait is spent (between attempts, between storage retries, between batch polls,
+         * before a session reopens): given milliseconds, a future that completes when the wait is
+         * over. Tests replace it to record waits without sleeping.
          */
         Builder waiter(Function<Long, CompletableFuture<Void>> waiter) {
             this.waiter = Objects.requireNonNull(waiter);

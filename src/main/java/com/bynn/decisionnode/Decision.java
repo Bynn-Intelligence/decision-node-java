@@ -66,6 +66,11 @@ public final class Decision {
         return as(id, ScoreAnswer.class);
     }
 
+    /** The answer to a {@code number} question. */
+    public NumberAnswer number(String id) {
+        return as(id, NumberAnswer.class);
+    }
+
     private <T extends Answer> T as(String id, Class<T> type) {
         Answer a = get(id);
         if (!type.isInstance(a)) {

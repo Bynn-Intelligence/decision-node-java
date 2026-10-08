@@ -17,6 +17,7 @@ import java.util.Map;
  * Question route = choice("Where should this go?", options("billing", "money", "bug", "broken"));
  * Question urgency = score("How urgent is this?", "routine", "today", "urgent", "critical");
  * Question escalate = truth("Escalate to a human now?");
+ * Question cars = number("How many cars are visible?", 0, 50);
  * }</pre>
  *
  * <p>Instructions, descriptions and levels take a string or any value that serialises to JSON.
@@ -119,5 +120,46 @@ public final class Questions {
     /** A place on an ordered scale. {@code levels} run from low to high. */
     public static Question score(Object instructions, Object... levels) {
         return score(instructions, Arrays.asList(levels));
+    }
+
+    /**
+     * A value on a grid of numbers: 0 to 255 in whole numbers, the API's defaults. Answered as a
+     * {@link NumberAnswer}.
+     */
+    public static Question number(Object instructions) {
+        return number(instructions, null, null, null);
+    }
+
+    /**
+     * A value on the grid from {@code min} to {@code max} in whole numbers. A null bound is left
+     * out of the request, so the API's default applies (0 and 255).
+     */
+    public static Question number(Object instructions, Number min, Number max) {
+        return number(instructions, min, max, null);
+    }
+
+    /**
+     * A value on the grid {@code min}, {@code min + step}, ... up to {@code max}. Each argument
+     * left null is left out of the request, so the API's default applies ({@code min} 0,
+     * {@code max} 255, {@code step} 1). The grid holds at most 4,096 values; a grid the API would
+     * refuse is refused before anything is sent, with the API's own {@link ValidationError}.
+     * Numbers are sent as given: pass a {@link java.math.BigDecimal} to keep an exact decimal.
+     */
+    public static Question number(Object instructions, Number min, Number max, Number step) {
+        Map<String, Object> q = new LinkedHashMap<>();
+        q.put("type", "number");
+        if (instructions != null) {
+            q.put("instructions", instructions);
+        }
+        if (min != null) {
+            q.put("min", min);
+        }
+        if (max != null) {
+            q.put("max", max);
+        }
+        if (step != null) {
+            q.put("step", step);
+        }
+        return new Question(q);
     }
 }

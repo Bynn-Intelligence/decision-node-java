@@ -1,6 +1,7 @@
 package com.bynn.decisionnode;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
 import java.nio.file.Files;
@@ -25,10 +26,8 @@ class ImageTest {
     }
 
     @Test
-    void unreadableOrUnknownFilesFailBeforeSending(@TempDir Path dir) throws Exception {
+    void anUnreadableFileFailsWhereTheImageIsMade(@TempDir Path dir) {
         assertThrows(IllegalArgumentException.class, () -> Image.fromPath("x", dir.resolve("missing.png")));
-        Files.writeString(dir.resolve("t.txt"), "hello");
-        assertThrows(IllegalArgumentException.class, () -> Image.fromPath("x", dir.resolve("t.txt")));
     }
 
     @Test
@@ -36,10 +35,43 @@ class ImageTest {
         assertEquals("image/png", Image.fromBytes("a", PNG, null).mediaType());
         assertEquals("image/jpeg", Image.fromBytes("b", JPEG, "").mediaType());
         assertEquals("image/webp", Image.fromBytes("c", WEBP).mediaType());
-        assertEquals("image/png", Image.fromBytes("d", JPEG, "image/png").mediaType());
-        byte[] text = "hello".getBytes(java.nio.charset.StandardCharsets.UTF_8);
-        assertThrows(IllegalArgumentException.class, () -> Image.fromBytes("e", text));
-        assertThrows(IllegalArgumentException.class, () -> Image.fromBytes("e", text, null));
+        assertEquals("image/jpeg", Image.fromBytes("d", JPEG, "image/png").mediaType());
+    }
+
+    @Test
+    void contentFaultsRaiseTheApiErrorBeforeSending(@TempDir Path dir) throws Exception {
+        Files.writeString(dir.resolve("t.txt"), "hello");
+        Image text = Image.fromPath("t", dir.resolve("t.txt"));
+        BadRequestError e = assertThrows(BadRequestError.class, () -> LocalChecks.image(text, false));
+        assertEquals("api_usage_error", e.errorType());
+        assertNull(e.status());
+        assertNull(e.requestId());
+        assertThrows(BadRequestError.class, () -> LocalChecks.image(Image.fromBytes("m", JPEG, "image/png"), false));
+        assertThrows(BadRequestError.class, () -> LocalChecks.image(Image.fromUrl("u", "http://example.com/a.png"), false));
+        assertThrows(BadRequestError.class, () -> LocalChecks.image(Image.fromUrl("u", "https://example.com/" + "a".repeat(2100)), false));
+        assertThrows(BadRequestError.class, () -> LocalChecks.image(Image.fromUrl("u", "https://example.com/a.png"), true));
+        assertThrows(BadRequestError.class, () -> LocalChecks.images(java.util.Collections.nCopies(5, Image.fromUrl("u", "https://e.com/a"))));
+        assertThrows(BadRequestError.class, () -> LocalChecks.images(java.util.List.of(
+                Image.fromUrl("u", "https://e.com/a"), Image.fromUrl("u", "https://e.com/b"))));
+    }
+
+    @Test
+    void anOversizedStreamIsNotKept() {
+        byte[] big = java.util.Arrays.copyOf(PNG, Image.MAX_BYTES + 10);
+        Image img = Image.fromStream("big", new java.io.ByteArrayInputStream(big));
+        assertNull(img.data());
+        BadRequestError e = assertThrows(BadRequestError.class, () -> LocalChecks.image(img, false));
+        assertEquals("Image big is larger than 10 MB.", e.getMessage());
+    }
+
+    @Test
+    void base64AndUploadForms() {
+        String b64 = java.util.Base64.getEncoder().encodeToString(PNG);
+        assertEquals("image/png", Image.fromBase64("p", b64).mediaType());
+        assertThrows(IllegalArgumentException.class, () -> Image.fromBase64("p", "not base64!"));
+        assertEquals(Map.of("id", "x", "upload_id", "upl_1"), Image.fromUpload("x", "upl_1").toMap());
+        assertEquals(Map.of("id", "x", "upload_id", "upl_1", "media_type", "image/png"),
+                Image.fromUpload("x", "upl_1", "image/png").toMap());
     }
 
     @Test
