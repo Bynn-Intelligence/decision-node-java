@@ -9,8 +9,8 @@ permissions:
   contents: read
 
 env:
-  # The conformance suite commit this SDK is tested against (suite 1.4). Change it here only.
-  CONFORMANCE_REF: 5853a23d3478b323d4467000c3b2bf650ad2e128
+  # The conformance suite commit this SDK is tested against (suite 1.5). Change it here only.
+  CONFORMANCE_REF: ec26660920dde2742768b9702df1a1a5c4da534d
 
 # Every action is pinned to a commit SHA; the tag it was resolved from follows as a comment.
 jobs:

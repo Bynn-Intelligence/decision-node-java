@@ -396,11 +396,26 @@ class ConformanceTest {
             } else if (step.containsKey("send")) {
                 Map<String, Object> args = new LinkedHashMap<>(map(step.get("send")));
                 Session s = (Session) ctx.get((String) args.remove("session"));
-                Frame frame = frame(args, ctx);
-                if (async) {
-                    join(s.sendAsync(frame));
-                } else {
-                    s.send(frame);
+                Object sent = null;
+                try {
+                    Frame frame = frame(args, ctx);
+                    if (async) {
+                        join(s.sendAsync(frame));
+                    } else {
+                        s.send(frame);
+                    }
+                } catch (DecisionNodeError | IllegalArgumentException err) {
+                    // A frame that breaks a fixed rule is refused locally and nothing is sent.
+                    if (!step.containsKey("outcome")) {
+                        throw err;
+                    }
+                    sent = err;
+                }
+                if (step.containsKey("outcome")) {
+                    if (sent == null) {
+                        fail(where + ": expected " + step.get("outcome") + ", the frame was sent");
+                    }
+                    checkOutcome(map(step.get("outcome")), sent, where + ".outcome");
                 }
             } else if (step.containsKey("read")) {
                 Map<String, Object> spec = map(step.get("read"));
@@ -1043,6 +1058,19 @@ class ConformanceTest {
         if (spec.get("max_retries") != null) {
             b.maxRetries(((Number) spec.get("max_retries")).intValue());
         }
+        if ("mock".equals(spec.get("clock"))) {
+            // The SDK's injectable clock reads the mock's clock for this session, so a case that
+            // moves the mock's time moves the client's with it.
+            String session = extraHeaders.get("x-mock-session");
+            b.clock(() -> {
+                try {
+                    Number epoch = (Number) control("/_mock/clock?session=" + session).get("epoch_seconds");
+                    return Math.round(epoch.doubleValue() * 1000);
+                } catch (Exception e) {
+                    throw new AssertionError("cannot read the mock's clock", e);
+                }
+            });
+        }
         if (spec.get("inline_threshold") != null) {
             b.inlineThreshold(((Number) spec.get("inline_threshold")).longValue());
         }
@@ -1324,6 +1352,15 @@ class ConformanceTest {
                 switch (key) {
                     case "$ref":
                         return resolve((String) e.getValue(), ctx);
+                    case "$nest": {
+                        // value inside depth arrays: [[[...value...]]]
+                        Map<String, Object> a = map(e.getValue());
+                        Object out = decode(a.get("value"), ctx);
+                        for (int i = ((Number) a.get("depth")).intValue(); i > 0; i--) {
+                            out = new ArrayList<>(List.of(out));
+                        }
+                        return out;
+                    }
                     case "$text": {
                         Map<String, Object> a = map(e.getValue());
                         return ((String) a.get("repeat")).repeat(((Number) a.get("times")).intValue());
