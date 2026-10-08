@@ -397,9 +397,13 @@ class ConformanceTest {
                 Map<String, Object> args = new LinkedHashMap<>(map(step.get("send")));
                 Session s = (Session) ctx.get((String) args.remove("session"));
                 Object sent = null;
+                boolean check = Boolean.TRUE.equals(step.get("check"));
                 try {
                     Frame frame = frame(args, ctx);
-                    if (async) {
+                    if (check) {
+                        s.checkFrame(frame);
+                        sent = CHECKED;
+                    } else if (async) {
                         join(s.sendAsync(frame));
                     } else {
                         s.send(frame);
@@ -760,6 +764,9 @@ class ConformanceTest {
 
     // ------------------------------------------------------------------ outcomes and errors
 
+    /** What a check that found nothing gives, for the outcome check. */
+    private static final Object CHECKED = new Object();
+
     /** What a supervise call returns, for the outcome check. */
     record Supervised(List<SessionEvent> replies, SessionClosed closed) {}
 
@@ -790,15 +797,18 @@ class ConformanceTest {
                 case "answer" -> match(mapOrEmpty(spec.get("answer")), normAnswer((Answer) result), path + ".answer");
                 case "batch" -> match(mapOrEmpty(spec.get("batch")), ((Batch) result).raw(), path + ".batch");
                 case "batch_page" -> match(mapOrEmpty(spec.get("batch_page")), ((BatchPage) result).raw(), path + ".batch_page");
-                case "batch_results" -> checkBatchResults(list(spec.get("batch_results")), result, path + ".batch_results");
+                case "batch_results" -> checkResultsSpec(spec, result, path);
                 case "batch_run" -> {
                     RunResult run = (RunResult) result;
                     match(mapOrEmpty(spec.get("batch")), run.batch().raw(), path + ".batch");
-                    if (spec.containsKey("batch_results")) {
-                        checkBatchResults(list(spec.get("batch_results")), run.results(), path + ".batch_results");
-                    }
+                    checkResultsSpec(spec, run.results(), path);
                 }
                 case "session" -> match(mapOrEmpty(spec.get("session")), normSession((Session) result), path + ".session");
+                case "checked" -> {
+                    if (result != CHECKED) {
+                        fail(path + ": expected a check that found nothing, got " + result);
+                    }
+                }
                 case "upload_ids" -> {
                     List<?> ids = (List<?>) result;
                     if (spec.containsKey("count") && ids.size() != ((Number) spec.get("count")).intValue()) {
@@ -853,6 +863,25 @@ class ConformanceTest {
             fields.put("message", "");
         }
         match(fields, normError(err), path + ".fields");
+    }
+
+    /** The results whole, or their count and a sample checked by index. */
+    private static void checkResultsSpec(Map<String, Object> spec, Object result, String path) {
+        List<?> results = (List<?>) result;
+        if (spec.containsKey("batch_results")) {
+            checkBatchResults(list(spec.get("batch_results")), results, path + ".batch_results");
+        }
+        if (spec.containsKey("count") && results.size() != ((Number) spec.get("count")).intValue()) {
+            fail(path + ": expected " + spec.get("count") + " results, got " + results.size());
+        }
+        for (Object o : listOrEmpty(spec.get("batch_results_sample"))) {
+            Map<String, Object> sample = new LinkedHashMap<>(map(o));
+            int index = ((Number) sample.remove("index")).intValue();
+            if (index >= results.size()) {
+                fail(path + ": no result at index " + index);
+            }
+            checkBatchResults(List.of(sample), List.of(results.get(index)), path + ".batch_results[" + index + "]");
+        }
     }
 
     private static void checkBatchResults(List<Object> expected, Object result, String path) {
@@ -1071,6 +1100,9 @@ class ConformanceTest {
                 }
             });
         }
+        if (spec.get("upload_timeout") != null) {
+            b.uploadTimeout(Duration.ofMillis(Math.round(((Number) spec.get("upload_timeout")).doubleValue() * 1000)));
+        }
         if (spec.get("inline_threshold") != null) {
             b.inlineThreshold(((Number) spec.get("inline_threshold")).longValue());
         }
@@ -1134,6 +1166,18 @@ class ConformanceTest {
         @SuppressWarnings("unchecked")
         List<Object> images = (List<Object>) args.get("images");
         String model = (String) args.get("model");
+        if (Boolean.TRUE.equals(call.get("check"))) {
+            // The same request handed to the SDK's check instead of being sent.
+            switch (method) {
+                case "decide" -> client.checkRequest(decideRequest(args));
+                case "systemone" -> client.checkSystemoneRequest(decideRequest(args));
+                case "open_session" -> client.checkRequest(sessionRequest(args));
+                case "batches.create" -> client.batches().checkCreateRequest(batchRequests(args.get("requests")));
+                case "batches.add" -> client.batches().checkAddRequest(batchRequests(args.get("requests")));
+                default -> throw new AssertionError("no check for " + method);
+            }
+            return CHECKED;
+        }
         switch (method) {
             case "decide":
                 return async ? join(client.decideAsync(decideRequest(args))) : client.decide(decideRequest(args));
@@ -1352,6 +1396,15 @@ class ConformanceTest {
                 switch (key) {
                     case "$ref":
                         return resolve((String) e.getValue(), ctx);
+                    case "$list": {
+                        // count copies of item, with {i} in its strings replaced by the 0-based index
+                        Map<String, Object> a = map(e.getValue());
+                        List<Object> out = new ArrayList<>();
+                        for (int i = 0; i < ((Number) a.get("count")).intValue(); i++) {
+                            out.add(decode(withIndex(a.get("item"), i), ctx));
+                        }
+                        return out;
+                    }
                     case "$nest": {
                         // value inside depth arrays: [[[...value...]]]
                         Map<String, Object> a = map(e.getValue());
@@ -1403,6 +1456,25 @@ class ConformanceTest {
             List<Object> out = new ArrayList<>();
             for (Object v : l) {
                 out.add(decode(v, ctx));
+            }
+            return out;
+        }
+        return value;
+    }
+
+    private static Object withIndex(Object value, int i) {
+        if (value instanceof String str) {
+            return str.replace("{i}", String.valueOf(i));
+        }
+        if (value instanceof Map<?, ?> m) {
+            Map<String, Object> out = new LinkedHashMap<>();
+            m.forEach((k, v) -> out.put((String) k, withIndex(v, i)));
+            return out;
+        }
+        if (value instanceof List<?> l) {
+            List<Object> out = new ArrayList<>();
+            for (Object v : l) {
+                out.add(withIndex(v, i));
             }
             return out;
         }
