@@ -3,10 +3,10 @@
 The official Java and Kotlin client for the [DecisionNode](https://decisionnode.com) API: ask
 typed questions about any state and get probabilities back.
 
-Java 17 or later. Works from Kotlin as is. Implements version 1.1 of the DecisionNode SDK
+Java 17 or later. Works from Kotlin as is. Implements version 1.2 of the DecisionNode SDK
 specification, which `DecisionNode.SPEC_VERSION` holds: decisions with `truth`, `choice`, `score`
-and `number` questions, `/v1/systemone`, the models list, image uploads, sessions and the Batch
-API.
+and `number` questions, up to 16 images and videos sent as frames, `/v1/systemone`, the models
+list, image uploads, sessions and the Batch API.
 
 ## Install
 
@@ -14,7 +14,7 @@ Gradle:
 
 ```kotlin
 dependencies {
-    implementation("com.bynn:decisionnode:0.1.0")
+    implementation("com.bynn:decisionnode:0.2.0")
 }
 ```
 
@@ -24,7 +24,7 @@ Maven:
 <dependency>
   <groupId>com.bynn</groupId>
   <artifactId>decisionnode</artifactId>
-  <version>0.1.0</version>
+  <version>0.2.0</version>
 </dependency>
 ```
 
@@ -111,20 +111,20 @@ fields are missing or of the wrong type; the rest of the decision is read as usu
 Numbers are exactly what the API sent: no rounding and no renormalising.
 
 A `Decision` also carries `model()` (the version that answered), `usage()`, `requestId()`,
-`latencyMs()`, `safety()` and `raw()`, the parsed body.
+`latencyMs()`, `safety()`, `warnings()` and `raw()`, the parsed body.
 
 ## The client
 
 | Method | Does |
 |---|---|
-| `decide(state, questions)`, `decide(state, questions, images, model)`, `decide(DecideRequest)` | One decision |
+| `decide(state, questions)`, `decide(state, questions, images, model)`, `decide(state, questions, images, videos, model)`, `decide(DecideRequest)` | One decision |
 | `decideMany(requests)`, `decideMany(requests, concurrency)` | Many decisions, at most `concurrency` (default 8) at a time. One `DecisionResult` per request, in input order; one failure does not stop the others. Every request is checked first: a `concurrency` below 1 or an invalid request (an empty question map, a value that cannot be serialised) throws `IllegalArgumentException` and nothing is sent, not even the valid requests. |
-| `check(state, instructions)`, `check(state, instructions, ifTrue, ifFalse)`, `check(state, instructions, ifTrue, ifFalse, images, model)` | One `truth` question; returns the `TruthAnswer` (see below for a malformed answer) |
-| `classify(state, instructions, options)`, `classify(state, instructions, options, images, model)` | One `choice` question; returns the `ChoiceAnswer` |
-| `score(state, instructions, levels)`, `score(state, instructions, levels, images, model)` | One `score` question; returns the `ScoreAnswer` |
-| `number(state, instructions, min, max, step)`, `number(..., images, model)` | One `number` question; returns the `NumberAnswer` |
-| `gate(action, context)`, `gate(action, context, images, model)` | Should this action run? See below |
-| `systemone(state, questions)`, `systemone(state, questions, images, model)` | One `POST /v1/systemone`, the strict path for `truth`, `choice` and `score`. The model is always sent; a `truth` question goes in the wire type that path takes and comes back as a `TruthAnswer` |
+| `check(state, instructions)`, `check(state, instructions, ifTrue, ifFalse)`, `check(state, instructions, ifTrue, ifFalse, images[, videos], model)` | One `truth` question; returns the `TruthAnswer` (see below for a malformed answer) |
+| `classify(state, instructions, options)`, `classify(state, instructions, options, images[, videos], model)` | One `choice` question; returns the `ChoiceAnswer` |
+| `score(state, instructions, levels)`, `score(state, instructions, levels, images[, videos], model)` | One `score` question; returns the `ScoreAnswer` |
+| `number(state, instructions, min, max, step)`, `number(..., images[, videos], model)` | One `number` question; returns the `NumberAnswer` |
+| `gate(action, context)`, `gate(action, context, images[, videos], model)` | Should this action run? See below |
+| `systemone(state, questions)`, `systemone(state, questions, images[, videos], model)` | One `POST /v1/systemone`, the strict path for `truth`, `choice` and `score`. The model is always sent; a `truth` question goes in the wire type that path takes and comes back as a `TruthAnswer` |
 | `upload(images)` | Uploads images now and returns their upload ids; see Images |
 | `openSession(request)`, `supervise(request, feed, onReply)` | Sessions; see below |
 | `batches()`, `runBatch(requests)` | The Batch API; see below |
@@ -138,8 +138,8 @@ CompletableFuture<TruthAnswer> f = dn.checkAsync(email, "Is this email a refund 
 f.thenAccept(a -> System.out.println(a.truth()));
 ```
 
-In the helpers, as in `decide`, `images` may be null and a null or empty `model` means the
-client's.
+In the helpers, as in `decide`, `images` and `videos` may be null and a null or empty `model`
+means the client's.
 
 `check`, `classify`, `score` and `number` promise a typed answer. When their own answer is missing or
 malformed, they throw `ServerError` with `status()` 200, the `requestId()` and `reason()` from
@@ -201,7 +201,7 @@ Every form:
 
 Local bytes are checked before anything is sent: JPEG, PNG or WebP by their first bytes (a media
 type you give must match them), at most 10 MB, at most 40 megapixels as read from the image header
-(the image is never decoded), at most 4 images in a request, and ids unique. A fault raises the
+(the image is never decoded), at most 16 images in a request, and ids unique. A fault raises the
 API's own `BadRequestError` with no request made. A file is read when the `Image` is made, so a
 file that cannot be read throws `IllegalArgumentException` there.
 
@@ -227,6 +227,43 @@ on 5xx, timeouts and connection errors; one that still times out raises `Timeout
 storage error it cannot recover from raises `DecisionNodeError` with the storage status,
 `errorType()` `upload_failed` and the storage's error code in `reason()`. A `PUT` answered 403 once
 its URL has expired is presigned again, once.
+
+## Videos
+
+A video travels as the frames you already hold, each with its time in seconds, and the server
+reads them as one video, in order and with their times. Only frames are sent: no video file, no
+video URL and no sound.
+
+```java
+List<VideoFrame> frames = new ArrayList<>();
+String[] files = {"dock-0000.jpg", "dock-0001.jpg", "dock-0002.jpg"};
+for (int i = 0; i < files.length; i++) {
+    frames.add(VideoFrame.fromBytes(i * 0.5, Files.readAllBytes(Path.of(files[i]))));  // 0, 0.5 and 1 s
+}
+
+Decision d = dn.decide(DecideRequest.builder()
+    .state("Warehouse camera 4, loading dock, shift B.")
+    .video(Video.of("dock", frames))
+    .question("fall", truth("Does a person fall in the video?"))
+    .question("forklifts", number("How many forklifts pass the door?", 0, 50))
+    .build());
+d.truth("fall").truth();
+d.warnings();   // the server's notes when it read a video at a lower rate or resolution
+```
+
+| Form | Sent as |
+|---|---|
+| `VideoFrame.fromBytes(t, bytes[, mediaType])` | A frame `t` seconds into the video, its bytes as base64; without a media type it is read from the first bytes (JPEG, PNG or WebP) |
+| `VideoFrame.fromBase64(t, text, mediaType)` | A frame given as base64 text, sent as given, with its media type |
+| `Video.of(id, frames)`, `.fps(...)`, `.start(...)`, `.end(...)` | A video: its id (unique across the request's images and videos), its frames with strictly increasing times, and optionally the most frames a second to read (above 0 and at most 4; the API's default is 2) and the window `[start, end)` on the frames' own times |
+
+A request takes up to 4 videos, each a `Video` or a map in the wire form, and a frame may be a map
+too; both are checked by the same rules. `decide`, `systemone`, the helpers, `decideMany` and
+batch requests take videos; sessions do not. Frames always go inline: they are never uploaded or
+cached, and no frame is resized or re-encoded. `Decision.usage()` carries `videoFrames()` (the
+frames read) and `videoSeconds()` (the seconds of the windows read), both null for a request
+without videos, and `Decision.warnings()` the server's notes exactly as sent (empty when there are
+none). To turn a video file into frames, use the `dn` command line tool: `dn --video dock.mp4`.
 
 ## Sessions
 
@@ -393,11 +430,16 @@ for a 422 a `ValidationError` whose `entries()` are the API's list. A local erro
   a choice of no or more than 255 options, a score of more than 10 levels, a `truth` with
   neither instructions nor criteria, a number question without instructions (`BadRequestError`
   with the API's plain message and no error type);
-- images: more than 4, an empty or repeated id, bytes that are not JPEG, PNG or WebP or not of
+- images: more than 16, an empty or repeated id, bytes that are not JPEG, PNG or WebP or not of
   the type given, over 10 MB, over 40 megapixels, an upload reference of another media type
   (`api_usage_error`); a URL that is not `https` (`api_usage_error`), or over 2,048 characters,
   with user information, on a port other than 443 or on a literal private address
   (`image_url_refused`);
+- videos: more than 4, a video without an id or with an id already used by an image or a video,
+  a video without frames, a frame time that is negative or not after the one before it, a frame
+  that is not JPEG, PNG or WebP by its media type, `fps` not above 0 and at most 4, `start` or
+  `end` negative, and `end` not after `start` (`api_usage_error`); how many frames a request may
+  carry, their sizes and their pixels are the server's to judge;
 - sessions: `window` outside 1 to 64 and `ttl_seconds` outside 1 to 3,600 (`ValidationError`);
   a frame without a value or an image, with an empty value, an unknown question id, a URL image
   or an image that breaks the rules above: `send` throws `BadRequestError`, writes nothing and
@@ -521,7 +563,7 @@ The conformance suite is the language-neutral set of cases every DecisionNode SD
 needs Python 3.10 or later for its mock server. Every case runs twice, through the blocking
 methods and through the `...Async` methods. Without `DECISIONNODE_CONFORMANCE_DIR` the
 conformance task fails rather than skipping. The suite's mock serves uploads, sessions (a
-WebSocket) and batches as well; this SDK passes every case of suite 1.6 in both forms. CI checks the suite out at a pinned commit, set
+WebSocket) and batches as well; this SDK passes every case of suite 1.7 in both forms. CI checks the suite out at a pinned commit, set
 once as `CONFORMANCE_REF` in `.github/workflows/ci.yml`; every action there is pinned to a
 commit SHA and no checkout keeps its credentials.
 

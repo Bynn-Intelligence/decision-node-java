@@ -70,6 +70,24 @@ class KotlinUsageTest {
     }
 
     @Test
+    fun videosReadNaturallyFromKotlin() {
+        val dn = DecisionNode.builder().apiKey("dn_test").baseUrl(url).timeout(Duration.ofSeconds(5)).build()
+        val jpeg = byteArrayOf(0xFF.toByte(), 0xD8.toByte(), 0xFF.toByte())
+        val dock = Video.of("dock", listOf(0.0, 0.5, 1.0).map { VideoFrame.fromBytes(it, jpeg) }).fps(2.0)
+
+        val d = dn.decide(
+            DecideRequest.builder()
+                .state("Warehouse camera 4, loading dock, shift B.")
+                .video(dock)
+                .question("escalate", truth("Does a person fall in the video?"))
+                .build(),
+        )
+
+        assertEquals(0.94, d.truth("escalate").truth())
+        assertEquals(emptyList<String>(), d.warnings())
+    }
+
+    @Test
     fun errorsAreKotlinExceptions() {
         val dn = DecisionNode.builder().apiKey("").baseUrl(url).build()
         val e = assertThrows<DecisionNodeError> { dn.check("s", "?") }

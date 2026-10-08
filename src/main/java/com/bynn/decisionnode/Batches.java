@@ -302,8 +302,12 @@ public final class Batches {
             Map<String, Object> limits = client.limits((String) head.get("model"));
             Map<String, Object> probe = new LinkedHashMap<>(head);
             probe.remove("custom_id");
-            LocalChecks.request(LocalChecks.probe(probe, r.images().size()), LocalChecks.Profile.DECIDE, limits);
+            LocalChecks.request(LocalChecks.probe(probe, r.images().size(), r.videos()), LocalChecks.Profile.DECIDE, limits);
             LocalChecks.images(r.images(), limits);
+            List<Object> videos = LocalChecks.videos(r.videos(), r.images(), limits);
+            if (!videos.isEmpty()) {
+                head.put("videos", videos);
+            }
             byte[] line = null;
             if (r.images().isEmpty()) {
                 line = line(head);

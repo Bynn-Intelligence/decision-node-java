@@ -930,7 +930,10 @@ class ConformanceTest {
         Map<String, Object> usage = new LinkedHashMap<>();
         usage.put("input_tokens", d.usage().inputTokens());
         usage.put("output_tokens", d.usage().outputTokens());
+        usage.put("video_frames", d.usage().videoFrames());
+        usage.put("video_seconds", d.usage().videoSeconds());
         n.put("usage", usage);
+        n.put("warnings", d.warnings());
         n.put("safety", normSafety(d.safety()));
         n.put("answers", normAnswers(d.answers()));
         n.put("raw", d.raw());
@@ -1165,6 +1168,8 @@ class ConformanceTest {
         Object state = args.get("state");
         @SuppressWarnings("unchecked")
         List<Object> images = (List<Object>) args.get("images");
+        @SuppressWarnings("unchecked")
+        List<Object> videos = (List<Object>) args.get("videos");
         String model = (String) args.get("model");
         if (Boolean.TRUE.equals(call.get("check"))) {
             // The same request handed to the SDK's check instead of being sent.
@@ -1193,8 +1198,8 @@ class ConformanceTest {
             }
             case "check":
                 return async
-                        ? join(client.checkAsync(state, args.get("instructions"), args.get("true"), args.get("false"), images, model))
-                        : client.check(state, args.get("instructions"), args.get("true"), args.get("false"), images, model);
+                        ? join(client.checkAsync(state, args.get("instructions"), args.get("true"), args.get("false"), images, videos, model))
+                        : client.check(state, args.get("instructions"), args.get("true"), args.get("false"), images, videos, model);
             case "classify": {
                 Object options = args.get("options");
                 if (options instanceof List) {
@@ -1202,24 +1207,24 @@ class ConformanceTest {
                     for (Object o : (List<?>) options) {
                         names.add((String) o);
                     }
-                    return async ? join(client.classifyAsync(state, args.get("instructions"), names, images, model))
-                            : client.classify(state, args.get("instructions"), names, images, model);
+                    return async ? join(client.classifyAsync(state, args.get("instructions"), names, images, videos, model))
+                            : client.classify(state, args.get("instructions"), names, images, videos, model);
                 }
-                return async ? join(client.classifyAsync(state, args.get("instructions"), map(options), images, model))
-                        : client.classify(state, args.get("instructions"), map(options), images, model);
+                return async ? join(client.classifyAsync(state, args.get("instructions"), map(options), images, videos, model))
+                        : client.classify(state, args.get("instructions"), map(options), images, videos, model);
             }
             case "score":
-                return async ? join(client.scoreAsync(state, args.get("instructions"), list(args.get("levels")), images, model))
-                        : client.score(state, args.get("instructions"), list(args.get("levels")), images, model);
+                return async ? join(client.scoreAsync(state, args.get("instructions"), list(args.get("levels")), images, videos, model))
+                        : client.score(state, args.get("instructions"), list(args.get("levels")), images, videos, model);
             case "number":
                 return async
                         ? join(client.numberAsync(state, args.get("instructions"), (Number) args.get("min"), (Number) args.get("max"),
-                                (Number) args.get("step"), images, model))
+                                (Number) args.get("step"), images, videos, model))
                         : client.number(state, args.get("instructions"), (Number) args.get("min"), (Number) args.get("max"),
-                                (Number) args.get("step"), images, model);
+                                (Number) args.get("step"), images, videos, model);
             case "gate":
-                return async ? join(client.gateAsync(args.get("action"), args.get("context"), images, model))
-                        : client.gate(args.get("action"), args.get("context"), images, model);
+                return async ? join(client.gateAsync(args.get("action"), args.get("context"), images, videos, model))
+                        : client.gate(args.get("action"), args.get("context"), images, videos, model);
             case "models":
                 return async ? join(client.modelsAsync()) : client.models();
             case "upload": {
@@ -1364,6 +1369,9 @@ class ConformanceTest {
             if (r.get("images") != null) {
                 b.images(list(r.get("images")));
             }
+            if (r.get("videos") != null) {
+                b.videos(list(r.get("videos")));
+            }
             b.model((String) r.get("model"));
             out.add(b.build());
         }
@@ -1381,6 +1389,9 @@ class ConformanceTest {
         }
         if (args.get("images") != null) {
             b.images(list(args.get("images")));
+        }
+        if (args.get("videos") != null) {
+            b.videos(list(args.get("videos")));
         }
         if (args.get("model") != null) {
             b.model((String) args.get("model"));
@@ -1444,6 +1455,22 @@ class ConformanceTest {
                     }
                     case "$image":
                         return image(map(decode(e.getValue(), ctx)));
+                    case "$video": {
+                        Map<String, Object> a = map(decode(e.getValue(), ctx));
+                        Video v = Video.of((String) a.get("id"), listOrEmpty(a.get("frames")));
+                        if (a.get("fps") != null) {
+                            v = v.fps(((Number) a.get("fps")).doubleValue());
+                        }
+                        if (a.get("start") != null) {
+                            v = v.start(((Number) a.get("start")).doubleValue());
+                        }
+                        if (a.get("end") != null) {
+                            v = v.end(((Number) a.get("end")).doubleValue());
+                        }
+                        return v;
+                    }
+                    case "$frame":
+                        return videoFrame(map(decode(e.getValue(), ctx)));
                     default:
                         break;
                 }
@@ -1479,6 +1506,22 @@ class ConformanceTest {
             return out;
         }
         return value;
+    }
+
+    private static VideoFrame videoFrame(Map<String, Object> a) {
+        double t = ((Number) a.get("t")).doubleValue();
+        String mediaType = (String) a.get("media_type");
+        if (a.containsKey("data_text")) {
+            return VideoFrame.fromBase64(t, (String) a.get("data_text"), mediaType);
+        }
+        byte[] data;
+        try {
+            data = a.containsKey("path") ? Files.readAllBytes(root.resolve((String) a.get("path")))
+                    : Base64.getDecoder().decode((String) a.get("data_base64"));
+        } catch (IOException e) {
+            throw new AssertionError(e);
+        }
+        return VideoFrame.fromBytes(t, data, mediaType);
     }
 
     private static Image image(Map<String, Object> a) {

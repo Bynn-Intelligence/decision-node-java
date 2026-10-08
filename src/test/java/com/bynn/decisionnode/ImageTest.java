@@ -60,7 +60,15 @@ class ImageTest {
         LocalChecks.image(Image.fromUrl("u", "https://8.8.8.8/a.png"), Map.of());
         assertThrows(BadRequestError.class, () -> LocalChecks.frame(
                 Frame.builder().image(Image.fromUrl("u", "https://example.com/a.png")).build(), null, Map.of()));
-        assertThrows(BadRequestError.class, () -> LocalChecks.images(java.util.Collections.nCopies(5, Image.fromUrl("u", "https://e.com/a")), Map.of()));
+        java.util.List<Image> seventeen = new java.util.ArrayList<>();
+        for (int i = 0; i < 17; i++) {
+            seventeen.add(Image.fromUrl("u" + i, "https://e.com/a"));
+        }
+        LocalChecks.images(seventeen.subList(0, 16), Map.of());
+        assertEquals("Too many images: 17, the limit is 16.",
+                assertThrows(BadRequestError.class, () -> LocalChecks.images(seventeen, Map.of())).getMessage());
+        assertThrows(BadRequestError.class, () -> LocalChecks.images(seventeen.subList(0, 5), Map.of("max_images", 4)));
+        assertThrows(BadRequestError.class, () -> LocalChecks.images(seventeen.subList(0, 5), Map.of("images", Map.of("max_images", 4))));
         assertThrows(BadRequestError.class, () -> LocalChecks.images(java.util.List.of(
                 Image.fromUrl("u", "https://e.com/a"), Image.fromUrl("u", "https://e.com/b")), Map.of()));
     }

@@ -44,7 +44,23 @@ final class Responses {
                 headers.get("x-request-id"),
                 latency(headers.get("x-decisionnode-latency-ms")),
                 Safety.parse(headers.get("x-decisionnode-safety")),
+                warnings(body.get("warnings")),
                 body);
+    }
+
+    /** The server's notes, exactly as sent: the strings of the list; empty when there is none. */
+    static List<String> warnings(Object value) {
+        List<Object> list = Json.asList(value);
+        if (list == null) {
+            return List.of();
+        }
+        List<String> out = new ArrayList<>(list.size());
+        for (Object w : list) {
+            if (w instanceof String) {
+                out.add((String) w);
+            }
+        }
+        return Collections.unmodifiableList(out);
     }
 
     /** Typed answers by question id, in the order sent; empty when the value is not an object. */
@@ -63,7 +79,8 @@ final class Responses {
     static Usage usage(Map<String, Object> usage) {
         return usage == null
                 ? new Usage(null, null)
-                : new Usage(Json.asLong(usage.get("input_tokens")), Json.asLong(usage.get("output_tokens")));
+                : new Usage(Json.asLong(usage.get("input_tokens")), Json.asLong(usage.get("output_tokens")),
+                        Json.asLong(usage.get("video_frames")), Json.asDouble(usage.get("video_seconds")));
     }
 
     /**

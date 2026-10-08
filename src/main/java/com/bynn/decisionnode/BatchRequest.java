@@ -17,13 +17,14 @@ import java.util.Map;
  * }</pre>
  *
  * <p>Its local images follow the client's inline threshold, counted per request; uploaded ones
- * are held by the batch until it runs.
+ * are held by the batch until it runs. Its videos go inline, as on a decision.
  */
 public final class BatchRequest {
     private final String customId;
     private final Object state;
     private final Map<String, Object> questions;
     private final List<Object> images;
+    private final List<Object> videos;
     private final String model;
 
     private BatchRequest(Builder b) {
@@ -31,6 +32,7 @@ public final class BatchRequest {
         this.state = b.state;
         this.questions = Collections.unmodifiableMap(new LinkedHashMap<>(b.questions));
         this.images = Collections.unmodifiableList(new ArrayList<>(b.images));
+        this.videos = Collections.unmodifiableList(new ArrayList<>(b.videos));
         this.model = b.model;
     }
 
@@ -46,7 +48,7 @@ public final class BatchRequest {
     /** A decision request under this {@code custom_id}. */
     public static BatchRequest of(String customId, DecideRequest request) {
         return builder(customId).state(request.state()).questions(request.questions()).images(request.images())
-                .model(request.model()).build();
+                .videos(request.videos()).model(request.model()).build();
     }
 
     public String customId() {
@@ -65,6 +67,11 @@ public final class BatchRequest {
         return images;
     }
 
+    /** {@link Video}s or wire-form maps. */
+    public List<Object> videos() {
+        return videos;
+    }
+
     public String model() {
         return model;
     }
@@ -74,6 +81,7 @@ public final class BatchRequest {
         private Object state;
         private final Map<String, Object> questions = new LinkedHashMap<>();
         private final List<Object> images = new ArrayList<>();
+        private final List<Object> videos = new ArrayList<>();
         private String model;
 
         private Builder(String customId) {
@@ -105,6 +113,19 @@ public final class BatchRequest {
         public Builder images(List<?> images) {
             if (images != null) {
                 this.images.addAll(images);
+            }
+            return this;
+        }
+
+        public Builder video(Video video) {
+            videos.add(video);
+            return this;
+        }
+
+        /** Adds videos: {@link Video}s or wire-form maps. */
+        public Builder videos(List<?> videos) {
+            if (videos != null) {
+                this.videos.addAll(videos);
             }
             return this;
         }

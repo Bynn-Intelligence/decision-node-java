@@ -4,6 +4,34 @@ All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project uses
 [Semantic Versioning](https://semver.org/).
 
+## [0.2.0] - Unreleased
+
+Implements version 1.2 of the DecisionNode SDK specification: sixteen images and videos as frames.
+
+### Added
+
+- Videos sent as the frames the caller sampled: `Video` (`Video.of(id, frames)` with `fps`,
+  `start` and `end`) and `VideoFrame` (`fromBytes`, `fromBase64`), on `DecideRequest` and
+  `BatchRequest` (`video`, `videos`) and as a `videos` argument of `decide`, `systemone`, `check`,
+  `classify`, `score`, `number` and `gate` and their async forms. A map in the wire form is accepted wherever a `Video` or a `VideoFrame` is, and
+  checked by the same rules. Frames always go inline: they are never uploaded, cached, resized or
+  re-encoded.
+- The API's video rules are checked before anything is sent, with the API's own message: at most
+  4 videos, an id that is present and unique across images and videos, at least one frame, frame
+  times at least 0 and strictly increasing, a JPEG, PNG or WebP media type for every frame, `fps`
+  above 0 and at most 4, `start` and `end` at least 0 and `end` after `start`. The number of
+  frames, their sizes and their pixels are left to the server.
+- `Usage.videoFrames()` and `Usage.videoSeconds()`, null for a request without videos, and
+  `Decision.warnings()`, the server's notes exactly as sent, empty when there are none.
+
+### Changed
+
+- `SPEC_VERSION` is `"1.2"`.
+- Up to 16 images a request, all of a request's uploads in one presign of up to 16 files. The 17th
+  image is refused locally with "Too many images: 17, the limit is 16.".
+- A model's image and video limits held from `models()` are also read where the API publishes
+  them, in its `images` and `videos` objects.
+
 ## [0.1.0] - Unreleased
 
 First release of the DecisionNode SDK for Java and Kotlin, implementing version 1.1 of the

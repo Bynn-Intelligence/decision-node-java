@@ -2,6 +2,7 @@ package com.bynn.decisionnode;
 
 import java.util.Collections;
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.NoSuchElementException;
 
@@ -21,15 +22,18 @@ public final class Decision {
     private final String requestId;
     private final Double latencyMs;
     private final Safety safety;
+    private final List<String> warnings;
     private final Map<String, Object> raw;
 
-    Decision(Map<String, Answer> answers, String model, Usage usage, String requestId, Double latencyMs, Safety safety, Map<String, Object> raw) {
+    Decision(Map<String, Answer> answers, String model, Usage usage, String requestId, Double latencyMs, Safety safety,
+            List<String> warnings, Map<String, Object> raw) {
         this.answers = Collections.unmodifiableMap(new LinkedHashMap<>(answers));
         this.model = model;
         this.usage = usage;
         this.requestId = requestId;
         this.latencyMs = latencyMs;
         this.safety = safety;
+        this.warnings = warnings;
         this.raw = raw;
     }
 
@@ -84,7 +88,7 @@ public final class Decision {
         return model;
     }
 
-    /** The tokens this decision used. */
+    /** The tokens this decision used and, for a request with videos, the frames and seconds read. */
     public Usage usage() {
         return usage;
     }
@@ -102,6 +106,14 @@ public final class Decision {
     /** The safety check, from {@code x-decisionnode-safety}; null when the server sent none. */
     public Safety safety() {
         return safety;
+    }
+
+    /**
+     * The server's notes on a request with videos, exactly as sent: one when it read a video at a
+     * lower rate or resolution than asked. Empty when there are none.
+     */
+    public List<String> warnings() {
+        return warnings;
     }
 
     /** The response body as parsed JSON, unknown fields included. */

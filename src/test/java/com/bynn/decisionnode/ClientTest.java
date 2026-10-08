@@ -246,7 +246,7 @@ class ClientTest {
 
     @Test
     void specVersion() {
-        assertEquals("1.1", DecisionNode.SPEC_VERSION);
+        assertEquals("1.2", DecisionNode.SPEC_VERSION);
         assertEquals(524_288, DecisionNode.DEFAULT_INLINE_THRESHOLD);
     }
 
@@ -260,6 +260,41 @@ class ClientTest {
         String body = seen.peek().body();
         assertTrue(body.startsWith("{\"model\":\"decisionnode-1.0-flash\""), body);
         assertTrue(body.contains("\"images\":[{\"id\":\"img\",\"url\":\"https://example.com/a.png\"}]"), body);
+    }
+
+    @Test
+    void videosAreSentInlineAfterTheImages() {
+        byte[] jpeg = {(byte) 0xFF, (byte) 0xD8, (byte) 0xFF};
+        Video dock = Video.of("dock", List.of(VideoFrame.fromBytes(30, jpeg), VideoFrame.fromBase64(30.5, "AAEC", "image/webp"))).fps(2);
+        Map<String, Object> wire = Map.of("id", "yard", "frames", List.of(Map.of("t", 1, "media_type", "image/png", "data", "AA==")));
+        client().decide("Warehouse camera 4.", Map.of("q", truth("A fall?")), null, List.of(dock, wire), null);
+        Map<String, Object> body = Json.asMap(Json.readOrNull(seen.peek().body().getBytes(StandardCharsets.UTF_8)));
+        assertEquals(List.of(
+                Map.of("id", "dock", "fps", 2.0, "frames", List.of(
+                        Map.of("t", 30.0, "media_type", "image/jpeg", "data", "/9j/"),
+                        Map.of("t", 30.5, "media_type", "image/webp", "data", "AAEC"))),
+                wire), body.get("videos"));
+        assertNull(body.get("images"));
+        // A helper carries videos too.
+        handler = s -> new Reply(200, Map.of(), "{\"answers\":{\"check\":{\"type\":\"truth\",\"truth\":0.5}}}");
+        client().check("s", "A fall?", null, null, null, List.of(dock), null);
+        assertTrue(new ArrayList<>(seen).get(1).body().contains("\"videos\":[{\"id\":\"dock\""));
+    }
+
+    @Test
+    void videoUsageAndWarnings() {
+        handler = s -> new Reply(200, Map.of(), "{\"answers\":{\"q\":{\"type\":\"truth\",\"truth\":0.5}},"
+                + "\"usage\":{\"input_tokens\":1300,\"output_tokens\":0,\"video_frames\":20,\"video_seconds\":10.000000000000002},"
+                + "\"warnings\":[\"Video 'dock' was read at 1 frame a second.\"]}");
+        Decision d = client().decide(Map.of("q", truth("?")));
+        assertEquals(20L, d.usage().videoFrames());
+        assertEquals(10.000000000000002, d.usage().videoSeconds());
+        assertEquals(List.of("Video 'dock' was read at 1 frame a second."), d.warnings());
+        handler = s -> new Reply(200, Map.of(), OK);
+        Decision plain = client().decide(Map.of("q", truth("?")));
+        assertNull(plain.usage().videoFrames());
+        assertNull(plain.usage().videoSeconds());
+        assertEquals(List.of(), plain.warnings());
     }
 
     @Test

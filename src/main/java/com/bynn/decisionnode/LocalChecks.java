@@ -2,6 +2,7 @@ package com.bynn.decisionnode;
 
 import java.math.BigDecimal;
 import java.math.BigInteger;
+import java.math.MathContext;
 import java.math.RoundingMode;
 import java.net.InetAddress;
 import java.net.UnknownHostException;
@@ -27,7 +28,9 @@ import java.util.regex.Pattern;
  * that depends on server state stay the server's to judge.
  */
 final class LocalChecks {
-    static final int MAX_IMAGES = 4;
+    static final int MAX_IMAGES = 16;
+    static final int MAX_VIDEOS = 4;
+    static final double MAX_FPS = 4;
     static final long MAX_PIXELS = 40_000_000L;
     static final int MAX_URL_CHARS = 2048;
     static final int MAX_CHOICE_OPTIONS = 255;
@@ -92,15 +95,32 @@ final class LocalChecks {
 
     /** The decision body as the server reads it, the images as placeholders. */
     static Map<String, Object> probe(Map<String, Object> head, int images) {
-        if (images == 0) {
+        return probe(head, images, List.of());
+    }
+
+    /**
+     * The decision body as the server reads it, the images and the built videos as placeholders
+     * of their depth, a video given as a map as it is.
+     */
+    static Map<String, Object> probe(Map<String, Object> head, int images, List<?> videos) {
+        if (images == 0 && videos.isEmpty()) {
             return head;
         }
         Map<String, Object> p = new LinkedHashMap<>(head);
-        List<Object> placeholders = new ArrayList<>(images);
-        for (int i = 0; i < images; i++) {
-            placeholders.add(Map.of("id", ""));
+        if (images > 0) {
+            List<Object> placeholders = new ArrayList<>(images);
+            for (int i = 0; i < images; i++) {
+                placeholders.add(Map.of("id", ""));
+            }
+            p.put("images", placeholders);
         }
-        p.put("images", placeholders);
+        if (!videos.isEmpty()) {
+            List<Object> placeholders = new ArrayList<>(videos.size());
+            for (Object v : videos) {
+                placeholders.add(v instanceof Video ? Map.of("frames", List.of(Map.of())) : v);
+            }
+            p.put("videos", placeholders);
+        }
         return p;
     }
 
@@ -406,10 +426,10 @@ final class LocalChecks {
 
     /** Every image of a request: the count, ids, URLs, upload references and local bytes. */
     static void images(List<?> images, Map<String, Object> limits) {
-        int most = held(limits, "max_images", MAX_IMAGES);
+        int most = held(limits, "max_images", held(limits, "images", "max_images", MAX_IMAGES));
         if (images.size() > most) {
-            throw usage("Too many images. Must have at most " + most + " images.",
-                    "a request takes up to " + most + " images, got " + images.size());
+            throw usage("Too many images: " + images.size() + ", the limit is " + most + ".",
+                    images.size() + " images, the limit is " + most);
         }
         Set<String> ids = new HashSet<>();
         for (int i = 0; i < images.size(); i++) {
@@ -443,7 +463,7 @@ final class LocalChecks {
         if (!img.isLocal()) {
             return;
         }
-        long biggest = held(limits, "max_image_bytes", Image.MAX_BYTES);
+        long biggest = held(limits, "max_image_bytes", held(limits, "images", "max_image_bytes", Image.MAX_BYTES));
         if (img.size() > biggest || img.bytes() == null) {
             throw usage("Image " + id + " is larger than 10 MB.", null);
         }
@@ -791,9 +811,184 @@ final class LocalChecks {
         return v != null && v > 0 ? v.intValue() : dflt;
     }
 
+    /** A limit the API publishes in an object of its own, such as {@code images.max_images}. */
+    private static int held(Map<String, Object> limits, String group, String name, int dflt) {
+        Map<String, Object> g = Json.asMap(limits.get(group));
+        return g == null ? dflt : held(g, name, dflt);
+    }
+
     @SuppressWarnings("unchecked")
     private static Map<String, Object> wireMap(Object o) {
         return o instanceof Map ? (Map<String, Object>) o : Map.of();
+    }
+
+    // ------------------------------------------------------------------ videos
+
+    /**
+     * Every video of a request, after its images, in the server's order: the count, then each
+     * video in turn (an id present and unique across the images and the videos, at least one
+     * frame, frame times at least 0 and strictly increasing, a JPEG, PNG or WebP media type for
+     * every frame, {@code fps} above 0 and at most 4, {@code start} and {@code end} at least 0 and
+     * {@code end} after {@code start}). The frame counts, bytes and pixels are the server's to
+     * judge. Returns the videos' wire forms.
+     *
+     * @throws IllegalArgumentException for a video that is neither a {@link Video} nor a map
+     */
+    static List<Object> videos(List<?> videos, List<?> images, Map<String, Object> limits) {
+        if (videos.isEmpty()) {
+            return List.of();
+        }
+        int most = held(limits, "videos", "max_videos", MAX_VIDEOS);
+        if (videos.size() > most) {
+            throw usage("Too many videos: " + videos.size() + ", the limit is " + most + ".",
+                    videos.size() + " videos, the limit is " + most);
+        }
+        Set<String> seen = new HashSet<>();
+        for (Object o : images) {
+            Object id = o instanceof Image ? ((Image) o).id() : wireMap(o).get("id");
+            if (id instanceof String) {
+                seen.add((String) id);
+            }
+        }
+        List<Object> wires = new ArrayList<>(videos.size());
+        for (int i = 0; i < videos.size(); i++) {
+            Object o = videos.get(i);
+            Map<String, Object> v;
+            if (o instanceof Video) {
+                v = ((Video) o).toMap();
+            } else if (o instanceof Map) {
+                v = wireMap(o);
+            } else {
+                throw new IllegalArgumentException("video " + i + " must be a Video or a wire-form map, got "
+                        + (o == null ? "null" : o.getClass().getSimpleName()));
+            }
+            video(i, v, seen);
+            wires.add(v);
+        }
+        return wires;
+    }
+
+    private static void video(int i, Map<String, Object> v, Set<String> seen) {
+        Object idValue = v.get("id");
+        if (!(idValue instanceof String) || ((String) idValue).isEmpty()) {
+            throw usage("Video " + i + " needs an id.", "video " + i + " has no id");
+        }
+        String id = (String) idValue;
+        if (!seen.add(id)) {
+            throw usage("Video id " + pyRepr(id) + " is used twice (ids are unique across images and videos).",
+                    "video id " + pyRepr(id) + " is used twice");
+        }
+        int forms = 0;
+        for (String name : List.of("data", "url", "frames")) {
+            forms += v.get(name) != null ? 1 : 0;
+        }
+        if (forms > 1) {
+            throw videoProblem(id, "needs exactly one of data, url and frames");
+        }
+        List<Object> frames = Json.asList(v.get("frames"));
+        if (frames == null || frames.isEmpty()) {
+            throw videoProblem(id, "frames must be a non-empty list of frames");
+        }
+        Double before = null;
+        for (int n = 0; n < frames.size(); n++) {
+            Map<String, Object> f = Json.asMap(frames.get(n));
+            if (f == null) {
+                throw videoProblem(id, "frame " + n + " must be an object with t, media_type and data");
+            }
+            Double t = finite(f.get("t"));
+            if (t == null || t < 0) {
+                throw videoProblem(id, "frame " + n + ": t must be a number of seconds, at least 0");
+            }
+            if (before != null && t <= before) {
+                throw videoProblem(id, "frame " + n + ": t must be larger than the frame before it (" + messageNumber(before) + ")");
+            }
+            before = t;
+            if (!(f.get("data") instanceof String)) {
+                throw videoProblem(id, "frame " + n + ": data must be base64 text");
+            }
+            Object mediaType = f.get("media_type");
+            if (!(mediaType instanceof String) || !MEDIA_TYPES.contains(mediaType)) {
+                throw videoProblem(id, "frame " + n + ": media_type must be one of image/jpeg, image/png, image/webp");
+            }
+        }
+        // A bound present but not a number is refused as one out of range.
+        Double fps = bound(v, "fps");
+        if (fps != null && (fps.isNaN() || fps <= 0 || fps > MAX_FPS)) {
+            throw videoProblem(id, "fps must be a number above 0 and at most " + messageNumber(MAX_FPS));
+        }
+        for (String name : List.of("start", "end")) {
+            Double x = bound(v, name);
+            if (x != null && (x.isNaN() || x < 0)) {
+                throw videoProblem(id, name + " must be a number of seconds, at least 0");
+            }
+        }
+        Double start = bound(v, "start");
+        Double end = bound(v, "end");
+        if (end != null && end <= (start == null ? 0 : start)) {
+            throw videoProblem(id, "end must be after start");
+        }
+    }
+
+    private static Double bound(Map<String, Object> v, String name) {
+        Object x = v.get(name);
+        if (x == null) {
+            return null;
+        }
+        Double d = finite(x);
+        return d == null ? Double.NaN : d;
+    }
+
+    /** A JSON number (never a boolean or a string) that is finite, else null. */
+    private static Double finite(Object x) {
+        Double d = Json.asDouble(x);
+        return d != null && !d.isNaN() && !d.isInfinite() ? d : null;
+    }
+
+    /**
+     * A number as the API's messages write it, as printf's {@code %g}: six significant digits
+     * without trailing zeros ({@code 1.5}, {@code 4}, {@code 1.69679e+09}).
+     */
+    static String messageNumber(double x) {
+        if (x == 0 || Double.isNaN(x) || Double.isInfinite(x)) {
+            return x == 0 ? "0" : Double.toString(x);
+        }
+        BigDecimal r = new BigDecimal(x).round(new MathContext(6, RoundingMode.HALF_EVEN));
+        int exp = r.precision() - r.scale() - 1;
+        if (exp < -4 || exp >= 6) {
+            String mantissa = r.movePointLeft(exp).stripTrailingZeros().toPlainString();
+            return mantissa + "e" + (exp < 0 ? "-" : "+") + (Math.abs(exp) < 10 ? "0" : "") + Math.abs(exp);
+        }
+        return r.stripTrailingZeros().toPlainString();
+    }
+
+    private static BadRequestError videoProblem(String id, String problem) {
+        return usage("Video " + pyRepr(id) + ": " + problem + ".", "video " + pyRepr(id) + ": " + problem);
+    }
+
+    /**
+     * An id quoted as the API's messages quote it: in single quotes, or in double quotes when it
+     * holds a single quote and no double quote, with backslashes, the quote and characters that
+     * do not print escaped.
+     */
+    static String pyRepr(String s) {
+        char quote = s.indexOf('\'') >= 0 && s.indexOf('"') < 0 ? '"' : '\'';
+        StringBuilder b = new StringBuilder(s.length() + 2).append(quote);
+        s.codePoints().forEach(c -> {
+            if (c == '\\' || c == quote) {
+                b.append('\\').appendCodePoint(c);
+            } else if (c == '\t') {
+                b.append("\\t");
+            } else if (c == '\n') {
+                b.append("\\n");
+            } else if (c == '\r') {
+                b.append("\\r");
+            } else if (c < 0x20 || (c >= 0x7f && c < 0xa0)) {
+                b.append(String.format("\\x%02x", c));
+            } else {
+                b.appendCodePoint(c);
+            }
+        });
+        return b.append(quote).toString();
     }
 
     // ------------------------------------------------------------------ errors
