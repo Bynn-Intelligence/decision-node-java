@@ -70,6 +70,7 @@ public final class DecisionNode {
     private final long inlineThreshold;
     private final Transport transport;
     private final Uploads uploads;
+    private final Batches batches;
 
     /** A client configured from the environment. */
     public DecisionNode() {
@@ -124,6 +125,7 @@ public final class DecisionNode {
         this.transport = new Transport(apiKey, baseUrl, timeout, maxRetries, headers, http,
                 b.waiter != null ? b.waiter : Transport::delay);
         this.uploads = new Uploads(transport, inlineThreshold);
+        this.batches = new Batches(this);
     }
 
     public static Builder builder() {
@@ -825,6 +827,44 @@ public final class DecisionNode {
         t.setDaemon(true);
         t.start();
         return out;
+    }
+
+    // ------------------------------------------------------------------ batches
+
+    /** The Batch API: decisions answered within 24 hours at half the price. */
+    public Batches batches() {
+        return batches;
+    }
+
+    /**
+     * Runs a whole batch: creates an empty draft, adds the requests (in calls of at most 10 MiB),
+     * finalizes it, polls every {@code pollInterval} (or the server's {@code Retry-After} when it
+     * is longer) until the batch has ended, then opens its results. If adding fails, the draft is
+     * cancelled and the error raised.
+     *
+     * @param pollInterval at least 10 seconds
+     * @param timeout      how long to wait for the batch to end; past it, {@link TimeoutError}
+     * @throws IllegalArgumentException for a poll interval under 10 seconds, before any request
+     */
+    public BatchRun runBatch(List<BatchRequest> requests, Duration pollInterval, Duration timeout) {
+        return Transport.await(runBatchAsync(requests, pollInterval, timeout));
+    }
+
+    /** {@link #runBatch(List, Duration, Duration)} polling every 60 seconds for up to 26 hours. */
+    public BatchRun runBatch(List<BatchRequest> requests) {
+        return runBatch(requests, Batches.DEFAULT_POLL_INTERVAL, Batches.DEFAULT_RUN_TIMEOUT);
+    }
+
+    public CompletableFuture<BatchRun> runBatchAsync(List<BatchRequest> requests, Duration pollInterval, Duration timeout) {
+        try {
+            return batches.run(requests, pollInterval, timeout);
+        } catch (RuntimeException e) {
+            return CompletableFuture.failedFuture(e);
+        }
+    }
+
+    public CompletableFuture<BatchRun> runBatchAsync(List<BatchRequest> requests) {
+        return runBatchAsync(requests, Batches.DEFAULT_POLL_INTERVAL, Batches.DEFAULT_RUN_TIMEOUT);
     }
 
     // ------------------------------------------------------------------ models, raw
