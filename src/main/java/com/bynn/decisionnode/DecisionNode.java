@@ -51,6 +51,9 @@ public final class DecisionNode {
     public static final String VERSION = "0.2.0";
     /** The version of the DecisionNode SDK specification this SDK implements. */
     public static final String SPEC_VERSION = "1.2";
+
+    /** The most images one upload call takes: one presign holds 1 to 16 files. */
+    static final int MAX_UPLOAD_FILES = 16;
     /**
      * The inline threshold in bytes: a request's local images that total under it are sent inline
      * as base64; at or above it they are uploaded once and sent by upload id. Change it per client
@@ -379,7 +382,7 @@ public final class DecisionNode {
         Map<String, Object> limits = limits((String) head.get("model"));
         List<Object> videos = request.videos();
         LocalChecks.request(LocalChecks.probe(head, images.size(), videos),
-                systemone ? LocalChecks.Profile.SYSTEMONE : LocalChecks.Profile.DECIDE, limits, images);
+                systemone ? LocalChecks.Profile.SYSTEMONE : LocalChecks.Profile.DECIDE, limits, images, videos);
         LocalChecks.images(images, limits);
         List<Object> wires = LocalChecks.videos(videos, images, limits);
         if (!wires.isEmpty()) {
@@ -852,6 +855,10 @@ public final class DecisionNode {
         List<Integer> todo = new ArrayList<>();
         try {
             Objects.requireNonNull(images, "images");
+            if (images.size() > MAX_UPLOAD_FILES) {
+                // One presign takes 1 to 16 files: its own 400, before anything is sent.
+                throw LocalChecks.usage("files: 1 to " + MAX_UPLOAD_FILES + " files, got " + images.size() + ".", null);
+            }
             LocalChecks.images(images, limits(null));
             for (int i = 0; i < images.size(); i++) {
                 Image img = images.get(i);

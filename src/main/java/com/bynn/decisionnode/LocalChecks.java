@@ -65,14 +65,16 @@ final class LocalChecks {
      * counts them; the images themselves are checked by {@link #images}.
      */
     static void request(Map<String, Object> body, Profile profile, Map<String, Object> limits) {
-        checkBody(body, profile, limits, List.of(), null);
+        checkBody(body, profile, limits, List.of(), null, List.of());
     }
 
     /**
      * {@link #request(Map, Profile, Map)} with the request's images, which a {@code point} or
-     * {@code box} question must name among: {@link Image}s or wire-form maps.
+     * {@code box} question must name among ({@link Image}s or wire-form maps), and its videos:
+     * more images or videos than a request takes are 422 entries after the questions'.
      */
-    static void request(Map<String, Object> body, Profile profile, Map<String, Object> limits, List<?> images) {
+    static void request(Map<String, Object> body, Profile profile, Map<String, Object> limits, List<?> images,
+            List<?> videos) {
         List<String> ids = new ArrayList<>(images.size());
         for (Object o : images) {
             Object id = o instanceof Image ? ((Image) o).id() : wireMap(o).get("id");
@@ -80,12 +82,68 @@ final class LocalChecks {
                 ids.add((String) id);
             }
         }
-        checkBody(body, profile, limits, List.of(), ids);
+        List<Map<String, Object>> extra = new ArrayList<>();
+        checkBody(body, profile, limits, extra, ids, counts(images, videos, limits));
     }
 
-    /** {@code imageIds} null leaves out the point and box rules on images (a session's open). */
+    /**
+     * The API's 422 {@code too_long} entries for more images (16, or the held limit) or more videos
+     * (4) than a request takes, the images' first. Each entry's input is the list in its wire form,
+     * a local image as {@code {"id", "media_type"}}: nothing is encoded or uploaded for an error.
+     */
+    private static List<Map<String, Object>> counts(List<?> images, List<?> videos, Map<String, Object> limits) {
+        List<Map<String, Object>> out = new ArrayList<>();
+        int mostImages = held(limits, "max_images", held(limits, "images", "max_images", MAX_IMAGES));
+        if (images.size() > mostImages) {
+            List<Object> given = new ArrayList<>(images.size());
+            for (Object o : images) {
+                given.add(o instanceof Image ? imageInput((Image) o) : o);
+            }
+            out.add(tooLong("images", given, mostImages));
+        }
+        int mostVideos = held(limits, "videos", "max_videos", MAX_VIDEOS);
+        if (videos.size() > mostVideos) {
+            List<Object> given = new ArrayList<>(videos.size());
+            for (Object o : videos) {
+                given.add(o instanceof Video ? ((Video) o).toMap() : o);
+            }
+            out.add(tooLong("videos", given, mostVideos));
+        }
+        return out;
+    }
+
+    private static Map<String, Object> tooLong(String name, List<Object> given, int most) {
+        Map<String, Object> ctx = new LinkedHashMap<>();
+        ctx.put("field_type", "List");
+        ctx.put("max_length", most);
+        ctx.put("actual_length", given.size());
+        return entry("too_long", List.of("body", name),
+                "List should have at most " + most + " items after validation, not " + given.size(), given, ctx);
+    }
+
+    /** An image as a 422 entry lists it: its wire form, a local image's bytes left out. */
+    private static Map<String, Object> imageInput(Image img) {
+        Map<String, Object> out = new LinkedHashMap<>();
+        out.put("id", img.id());
+        if (img.url() != null) {
+            out.put("url", img.url());
+            return out;
+        }
+        if (img.uploadId() != null) {
+            out.put("upload_id", img.uploadId());
+        }
+        if (img.mediaType() != null) {
+            out.put("media_type", img.mediaType());
+        }
+        return out;
+    }
+
+    /**
+     * {@code imageIds} null leaves out the point and box rules on images (a session's open);
+     * {@code tail} holds the 422 entries that follow the questions' (the counts).
+     */
     private static void checkBody(Map<String, Object> body, Profile profile, Map<String, Object> limits,
-            List<Map<String, Object>> extra, List<String> imageIds) {
+            List<Map<String, Object>> extra, List<String> imageIds, List<Map<String, Object>> tail) {
         nesting(body, 0);
         List<Map<String, Object>> entries = new ArrayList<>(extra);
         Object state = body.get("state");
@@ -102,6 +160,7 @@ final class LocalChecks {
                 }
             }
         }
+        entries.addAll(tail);
         if (!entries.isEmpty()) {
             throw invalid(entries);
         }
@@ -479,13 +538,11 @@ final class LocalChecks {
 
     // ------------------------------------------------------------------ images
 
-    /** Every image of a request: the count, ids, URLs, upload references and local bytes. */
+    /**
+     * Every image of a request: ids, URLs, upload references and local bytes. Their count is one
+     * of the request's 422 entries ({@link #request(Map, Profile, Map, List, List)}).
+     */
     static void images(List<?> images, Map<String, Object> limits) {
-        int most = held(limits, "max_images", held(limits, "images", "max_images", MAX_IMAGES));
-        if (images.size() > most) {
-            throw usage("Too many images: " + images.size() + ", the limit is " + most + ".",
-                    images.size() + " images, the limit is " + most);
-        }
         Set<String> ids = new HashSet<>();
         for (int i = 0; i < images.size(); i++) {
             Object o = images.get(i);
@@ -715,7 +772,7 @@ final class LocalChecks {
         }
         Map<String, Object> questions = new LinkedHashMap<>();
         questions.put("questions", body.get("questions"));
-        checkBody(questions, Profile.DECIDE, limits, entries, null);
+        checkBody(questions, Profile.DECIDE, limits, entries, null, List.of());
         if (Boolean.FALSE.equals(sessions.get("enabled"))) {
             throw usage("Model " + limits.get("model") + " does not serve sessions.", null);
         }
@@ -880,8 +937,8 @@ final class LocalChecks {
     // ------------------------------------------------------------------ videos
 
     /**
-     * Every video of a request, after its images, in the server's order: the count, then each
-     * video in turn (an id present and unique across the images and the videos, at least one
+     * Every video of a request, after its images, in the server's order (their count is one of the
+     * request's 422 entries): each video in turn (an id present and unique across the images and the videos, at least one
      * frame, frame times at least 0 and strictly increasing, a JPEG, PNG or WebP media type for
      * every frame, {@code fps} above 0 and at most 4, {@code start} and {@code end} at least 0 and
      * {@code end} after {@code start}). The frame counts, bytes and pixels are the server's to
@@ -892,11 +949,6 @@ final class LocalChecks {
     static List<Object> videos(List<?> videos, List<?> images, Map<String, Object> limits) {
         if (videos.isEmpty()) {
             return List.of();
-        }
-        int most = held(limits, "videos", "max_videos", MAX_VIDEOS);
-        if (videos.size() > most) {
-            throw usage("Too many videos: " + videos.size() + ", the limit is " + most + ".",
-                    videos.size() + " videos, the limit is " + most);
         }
         Set<String> seen = new HashSet<>();
         for (Object o : images) {

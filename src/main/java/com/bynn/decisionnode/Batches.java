@@ -303,7 +303,7 @@ public final class Batches {
             Map<String, Object> probe = new LinkedHashMap<>(head);
             probe.remove("custom_id");
             LocalChecks.request(LocalChecks.probe(probe, r.images().size(), r.videos()), LocalChecks.Profile.DECIDE, limits,
-                    r.images());
+                    r.images(), r.videos());
             LocalChecks.images(r.images(), limits);
             List<Object> videos = LocalChecks.videos(r.videos(), r.images(), limits);
             if (!videos.isEmpty()) {

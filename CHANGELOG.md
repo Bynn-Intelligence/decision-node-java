@@ -25,19 +25,22 @@ and the point and box question types.
   `classify`, `score`, `number` and `gate` and their async forms. A map in the wire form is accepted wherever a `Video` or a `VideoFrame` is, and
   checked by the same rules. Frames always go inline: they are never uploaded, cached, resized or
   re-encoded.
-- The API's video rules are checked before anything is sent, with the API's own message: at most
-  4 videos, an id that is present and unique across images and videos, at least one frame, frame
-  times at least 0 and strictly increasing, a JPEG, PNG or WebP media type for every frame, `fps`
-  above 0 and at most 4, `start` and `end` at least 0 and `end` after `start`. The number of
-  frames, their sizes and their pixels are left to the server.
+- The API's video rules are checked before anything is sent, with the API's own message: an id
+  that is present and unique across images and videos, at least one frame, frame times at least 0
+  and strictly increasing, a JPEG, PNG or WebP media type for every frame, `fps` above 0 and at
+  most 4, `start` and `end` at least 0 and `end` after `start`. The number of frames, their sizes
+  and their pixels are left to the server.
 - `Usage.videoFrames()` and `Usage.videoSeconds()`, null for a request without videos, and
   `Decision.warnings()`, the server's notes exactly as sent, empty when there are none.
 
 ### Changed
 
 - `SPEC_VERSION` is `"1.2"`.
-- Up to 16 images a request, all of a request's uploads in one presign of up to 16 files. The 17th
-  image is refused locally with "Too many images: 17, the limit is 16.".
+- Up to 16 images a request, all of a request's uploads in one presign of up to 16 files. More than
+  16 images, or more than 4 videos, is refused locally as the API's 422: a `ValidationError` with
+  a `too_long` entry on `["body", "images"]` or `["body", "videos"]`, listed after the request's
+  other entries. `upload` with more than 16 images throws the presign's own 400, "files: 1 to 16
+  files, got 17.".
 - A model's image and video limits held from `models()` are also read where the API publishes
   them, in its `images` and `videos` objects.
 

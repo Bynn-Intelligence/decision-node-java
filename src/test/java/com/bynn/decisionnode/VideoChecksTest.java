@@ -36,8 +36,19 @@ class VideoChecksTest {
         for (String id : List.of("a", "b", "c", "d", "e")) {
             five.add(Video.of(id, List.of(VideoFrame.fromBytes(0, JPEG))));
         }
-        assertEquals("Too many videos: 5, the limit is 4.", refused(five));
-        LocalChecks.videos(five.subList(0, 4), List.of(), Map.of());
+        // Five videos are a 422 entry of the request, after its questions' entries.
+        LocalChecks.videos(five, List.of(), Map.of());
+        Map<String, Object> choice = new java.util.LinkedHashMap<>();
+        choice.put("type", "choice");
+        choice.put("instructions", "?");
+        ValidationError e = assertThrows(ValidationError.class, () -> LocalChecks.request(
+                Map.of("questions", Map.of("route", choice)), LocalChecks.Profile.DECIDE, Map.of(), List.of(), five));
+        assertEquals(2, e.entries().size());
+        assertEquals("missing", ((Map<?, ?>) e.entries().get(0)).get("type"));
+        Map<?, ?> count = (Map<?, ?>) e.entries().get(1);
+        assertEquals(List.of("body", "videos"), count.get("loc"));
+        assertEquals(Map.of("field_type", "List", "max_length", 4, "actual_length", 5), count.get("ctx"));
+        assertEquals("e", ((Map<?, ?>) ((List<?>) count.get("input")).get(4)).get("id"));
         assertEquals("Video 0 needs an id.", refused(List.of(Video.of("", List.of(VideoFrame.fromBytes(0, JPEG))))));
         String twice = "Video id 'dock' is used twice (ids are unique across images and videos).";
         assertEquals(twice, refused(List.of(dock(), dock())));

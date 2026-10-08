@@ -64,11 +64,21 @@ class ImageTest {
         for (int i = 0; i < 17; i++) {
             seventeen.add(Image.fromUrl("u" + i, "https://e.com/a"));
         }
-        LocalChecks.images(seventeen.subList(0, 16), Map.of());
-        assertEquals("Too many images: 17, the limit is 16.",
-                assertThrows(BadRequestError.class, () -> LocalChecks.images(seventeen, Map.of())).getMessage());
-        assertThrows(BadRequestError.class, () -> LocalChecks.images(seventeen.subList(0, 5), Map.of("max_images", 4)));
-        assertThrows(BadRequestError.class, () -> LocalChecks.images(seventeen.subList(0, 5), Map.of("images", Map.of("max_images", 4))));
+        // The count is one of the request's 422 entries, not an image check.
+        LocalChecks.images(seventeen, Map.of());
+        Map<String, Object> body = Map.of("questions", Map.of("q", Questions.truth("?")));
+        LocalChecks.request(body, LocalChecks.Profile.DECIDE, Map.of(), seventeen.subList(0, 16), java.util.List.of());
+        ValidationError tooMany = assertThrows(ValidationError.class,
+                () -> LocalChecks.request(body, LocalChecks.Profile.DECIDE, Map.of(), seventeen, java.util.List.of()));
+        Map<?, ?> entry = (Map<?, ?>) tooMany.entries().get(0);
+        assertEquals("too_long", entry.get("type"));
+        assertEquals(java.util.List.of("body", "images"), entry.get("loc"));
+        assertEquals("List should have at most 16 items after validation, not 17", entry.get("msg"));
+        assertEquals(Map.of("id", "u16", "url", "https://e.com/a"), ((java.util.List<?>) entry.get("input")).get(16));
+        assertThrows(ValidationError.class, () -> LocalChecks.request(body, LocalChecks.Profile.DECIDE,
+                Map.of("max_images", 4), seventeen.subList(0, 5), java.util.List.of()));
+        assertThrows(ValidationError.class, () -> LocalChecks.request(body, LocalChecks.Profile.DECIDE,
+                Map.of("images", Map.of("max_images", 4)), seventeen.subList(0, 5), java.util.List.of()));
         assertThrows(BadRequestError.class, () -> LocalChecks.images(java.util.List.of(
                 Image.fromUrl("u", "https://e.com/a"), Image.fromUrl("u", "https://e.com/b")), Map.of()));
     }

@@ -227,8 +227,9 @@ Every form:
 
 Local bytes are checked before anything is sent: JPEG, PNG or WebP by their first bytes (a media
 type you give must match them), at most 10 MB, at most 40 megapixels as read from the image header
-(the image is never decoded), at most 16 images in a request, and ids unique. A fault raises the
-API's own `BadRequestError` with no request made. A file is read when the `Image` is made, so a
+(the image is never decoded), at most 16 images in a request, and ids unique. A 17th image raises
+the API's `ValidationError` with a `too_long` entry; any other fault raises the API's own
+`BadRequestError`, with no request made. `upload` takes up to 16 images a call. A file is read when the `Image` is made, so a
 file that cannot be read throws `IllegalArgumentException` there.
 
 When a request's local images total under the inline threshold (`DecisionNode.DEFAULT_INLINE_THRESHOLD`,
@@ -458,12 +459,15 @@ for a 422 a `ValidationError` whose `entries()` are the API's list. A local erro
   (`ValidationError`); a choice of no or more than 255 options, a score of more than 10 levels,
   a `truth` with neither instructions nor criteria, a number, point or box question without
   instructions (`BadRequestError` with the API's plain message and no error type);
-- images: more than 16, an empty or repeated id, bytes that are not JPEG, PNG or WebP or not of
+- more than 16 images or more than 4 videos (`ValidationError` with the API's `too_long` entry on
+  `["body", "images"]` or `["body", "videos"]`, after the request's other entries; a local image
+  is listed by its id and media type, without its bytes);
+- images: an empty or repeated id, bytes that are not JPEG, PNG or WebP or not of
   the type given, over 10 MB, over 40 megapixels, an upload reference of another media type
   (`api_usage_error`); a URL that is not `https` (`api_usage_error`), or over 2,048 characters,
   with user information, on a port other than 443 or on a literal private address
   (`image_url_refused`);
-- videos: more than 4, a video without an id or with an id already used by an image or a video,
+- videos: a video without an id or with an id already used by an image or a video,
   a video without frames, a frame time that is negative or not after the one before it, a frame
   that is not JPEG, PNG or WebP by its media type, `fps` not above 0 and at most 4, `start` or
   `end` negative, and `end` not after `start` (`api_usage_error`); how many frames a request may
@@ -591,7 +595,7 @@ The conformance suite is the language-neutral set of cases every DecisionNode SD
 needs Python 3.10 or later for its mock server. Every case runs twice, through the blocking
 methods and through the `...Async` methods. Without `DECISIONNODE_CONFORMANCE_DIR` the
 conformance task fails rather than skipping. The suite's mock serves uploads, sessions (a
-WebSocket) and batches as well; this SDK passes every case of suite 1.8 in both forms. CI checks the suite out at a pinned commit, set
+WebSocket) and batches as well; this SDK passes every case of suite 1.9 in both forms. CI checks the suite out at a pinned commit, set
 once as `CONFORMANCE_REF` in `.github/workflows/ci.yml`; every action there is pinned to a
 commit SHA and no checkout keeps its credentials.
 
