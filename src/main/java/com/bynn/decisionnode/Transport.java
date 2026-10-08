@@ -120,7 +120,8 @@ final class Transport {
 
     /**
      * A GET whose success is read line by line as the caller consumes it: the deadline covers the
-     * attempt up to the response headers, and the body then streams.
+     * attempt up to the response headers; the body then streams, and fails when no data arrives
+     * for the timeout while the reader waits for more.
      */
     CompletableFuture<HttpResponse<Stream<String>>> lines(String path) {
         HttpRequest request;
@@ -130,7 +131,7 @@ final class Transport {
             return CompletableFuture.failedFuture(e);
         }
         return this.attempt(request, 0, Policy.DEFAULT,
-                () -> HttpResponse.BodySubscribers.ofLines(java.nio.charset.StandardCharsets.UTF_8));
+                () -> new IdleTimeout<>(HttpResponse.BodySubscribers.ofLines(java.nio.charset.StandardCharsets.UTF_8), timeout, DEADLINES));
     }
 
     private HttpRequest request(String method, String path, byte[] body, String contentType, String accept) {
