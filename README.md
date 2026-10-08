@@ -223,20 +223,6 @@ Every form:
 | `Image.fromPath(id, path)`, `Image.fromBytes(id, bytes[, mediaType])`, `Image.fromBase64(id, text[, mediaType])`, `Image.fromStream(id, in[, mediaType])` | Checked here, then inline as base64 or uploaded, by the threshold below |
 | `Image.fromUpload(id, uploadId[, mediaType])` | `{"id", "upload_id"}` as given |
 
-The model sees each image as "Picture 1", "Picture 2", ... with its id beside it, numbered from 1
-in the order of `images`, and each video as "Video 1", "Video 2", ... in the order of `videos`,
-numbered separately. Text in the state, the instructions or a criterion can refer to an image by
-position ("Picture 2", "image 2", "the second image", "the last image") or by its id ("the
-receipt", "`receipt`"), and to a video the same way ("Video 1" or its id):
-
-```java
-Decision d = dn.decide(DecideRequest.builder()
-    .image(Image.fromUrl("receipt", "https://files.example.com/claims/4411/receipt.jpg"))
-    .image(Image.fromUrl("statement", "https://files.example.com/claims/4411/statement.png"))
-    .question("charged", truth("Does the total in Picture 1 match the charge on the statement?"))
-    .build());
-```
-
 Local bytes are checked before anything is sent: JPEG, PNG or WebP by their first bytes (a media
 type you give must match them), at most 10 MB, at most 40 megapixels as read from the image header
 (the image is never decoded), at most 16 images in a request, and ids unique. A 17th image raises
@@ -266,6 +252,29 @@ on 5xx, timeouts and connection errors; one that still times out raises `Timeout
 storage error it cannot recover from raises `DecisionNodeError` with the storage status,
 `errorType()` `upload_failed` and the storage's error code in `reason()`. A `PUT` answered 403 once
 its URL has expired is presigned again, once.
+
+### Referring to images and videos
+
+There are two ways to say which image a question is about:
+
+1. **By id (recommended).** Give each image a short, meaningful id and use it in the instructions,
+   in backticks: "Does the total on `receipt` match the amount in the claim?"
+2. **By number.** Images are numbered from 1 in the order of `images`: "image 2", "the second
+   image", "Picture 2" and "the last image" all work.
+
+The model sees each image as `Picture 1 (receipt):`, `Picture 2 (claim_photo):`, so both ways point
+to the same image. Prefer ids: they stay right when images are added or reordered. Use names, not
+digits, as ids (`front`, not `2`). Videos work the same way, by id or by number ("video 1"),
+numbered separately in the order of `videos`. The `image` of a point or box question takes the id.
+
+```java
+Decision d = dn.decide(DecideRequest.builder()
+    .state("Expense claim 4411: 740.00 EUR.")
+    .image(Image.fromUrl("receipt", "https://files.example.com/claims/4411/receipt.jpg"))
+    .image(Image.fromUrl("claim_photo", "https://files.example.com/claims/4411/photo.jpg"))
+    .question("matches", truth("Does the total on `receipt` match the amount in the claim?"))
+    .build());
+```
 
 ## Videos
 
