@@ -94,6 +94,37 @@ public record Safety(boolean checked, Map<String, Double> scores, List<String> f
         return new Safety(true, scores, flagged, null);
     }
 
+    /**
+     * The check in its body form, as a session reply or a batch line carries it:
+     * {@code {"checked": true, "harm": 0.0021, "self_harm": 0.0008, "flagged": []}}. Returns null
+     * for a value that is not an object.
+     */
+    public static Safety fromBody(Object value) {
+        Map<String, Object> m = Json.asMap(value);
+        if (m == null) {
+            return null;
+        }
+        boolean checked = !Boolean.FALSE.equals(m.get("checked"));
+        Map<String, Double> scores = new LinkedHashMap<>();
+        for (Map.Entry<String, Object> e : m.entrySet()) {
+            Double v = Json.asDouble(e.getValue());
+            if (v != null) {
+                scores.put(e.getKey(), v);
+            }
+        }
+        List<String> flagged = new ArrayList<>();
+        List<Object> f = Json.asList(m.get("flagged"));
+        if (f != null) {
+            for (Object o : f) {
+                if (o instanceof String) {
+                    flagged.add((String) o);
+                }
+            }
+        }
+        Object reason = m.get("reason");
+        return new Safety(checked, scores, flagged, reason instanceof String ? (String) reason : null);
+    }
+
     private static String unquote(String s) {
         if (s.length() >= 2 && s.startsWith("\"") && s.endsWith("\"")) {
             return s.substring(1, s.length() - 1);

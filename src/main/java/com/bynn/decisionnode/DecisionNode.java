@@ -13,6 +13,7 @@ import java.util.Objects;
 import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.function.Consumer;
 import java.util.function.Function;
 import javax.net.ssl.SSLContext;
 
@@ -734,6 +735,96 @@ public final class DecisionNode {
             }
             return Collections.unmodifiableList(out);
         });
+    }
+
+    // ------------------------------------------------------------------ sessions
+
+    /** Opens a session. See {@link #openSession(SessionRequest)}. */
+    public Session openSession(Object state, Map<String, ?> questions) {
+        return openSession(SessionRequest.builder().state(state).questions(questions).build());
+    }
+
+    /**
+     * {@code POST /v1/sessions}: opens a session that answers the same questions about a stream of
+     * frames. The model is always sent (the request's, else the client's). Retried as any call,
+     * except that a 429 {@code session_limit_exceeded} is never retried and raises
+     * {@link SessionLimitError}. Then {@link Session#connect()} opens its socket.
+     */
+    public Session openSession(SessionRequest request) {
+        return Transport.await(openSessionAsync(request));
+    }
+
+    public CompletableFuture<Session> openSessionAsync(SessionRequest request) {
+        byte[] payload;
+        try {
+            payload = Json.write(sessionBody(request));
+        } catch (RuntimeException e) {
+            return CompletableFuture.failedFuture(e);
+        }
+        return transport.json("POST", "/v1/sessions", payload, Transport.Policy.SESSION_OPEN)
+                .thenApply(r -> new Session(this, r.object()));
+    }
+
+    private Map<String, Object> sessionBody(SessionRequest request) {
+        if (request == null) {
+            throw new IllegalArgumentException("request must not be null");
+        }
+        if (request.questions().isEmpty()) {
+            throw new IllegalArgumentException("questions must hold at least one question");
+        }
+        LocalChecks.questions(request.questions());
+        Map<String, Object> body = new LinkedHashMap<>();
+        String m = request.model();
+        body.put("model", m != null && !m.isEmpty() ? m : model);
+        if (request.instructions() != null) {
+            body.put("instructions", request.instructions());
+        }
+        if (request.state() != null) {
+            body.put("state", request.state());
+        }
+        body.put("questions", request.questions());
+        if (request.window() != null) {
+            body.put("window", request.window());
+        }
+        if (request.ttlSeconds() != null) {
+            body.put("ttl_seconds", request.ttlSeconds());
+        }
+        return body;
+    }
+
+    /**
+     * Runs one long-lived feed through sessions, as a supervisor would: opens a session, sends each
+     * reading of {@code feed} as a frame (latest wins on the server), hands every reply and frame
+     * error to {@code onReply}, and reopens with the same request when the session closes with a
+     * code that calls for it ({@code 1001}, {@code 1006}, {@code 1011}, {@code 4404},
+     * {@code 4408}, {@code 4409}, {@code 4410}), after a capped backoff from 1 s to 30 s with
+     * jitter ({@code 4408} and {@code 4410} without one). On {@code 1013} it connects again to
+     * the same session. It stops on any other code.
+     *
+     * @return when the feed ends: after the outstanding replies, {@link Session#end()}, and the
+     *     last {@link SessionClosed} seen, or null when none was; when it stops on a code: that
+     *     {@link SessionClosed}
+     */
+    public SessionClosed supervise(SessionRequest request, Iterable<Frame> feed, Consumer<SessionEvent> onReply) {
+        return new Supervisor(this, request, feed, onReply).run();
+    }
+
+    /**
+     * {@link #supervise(SessionRequest, Iterable, Consumer)} on a thread of its own, since the feed
+     * is read as it produces.
+     */
+    public CompletableFuture<SessionClosed> superviseAsync(SessionRequest request, Iterable<Frame> feed, Consumer<SessionEvent> onReply) {
+        CompletableFuture<SessionClosed> out = new CompletableFuture<>();
+        Thread t = new Thread(() -> {
+            try {
+                out.complete(supervise(request, feed, onReply));
+            } catch (Throwable e) {
+                out.completeExceptionally(e);
+            }
+        }, "decisionnode-supervise");
+        t.setDaemon(true);
+        t.start();
+        return out;
     }
 
     // ------------------------------------------------------------------ models, raw
