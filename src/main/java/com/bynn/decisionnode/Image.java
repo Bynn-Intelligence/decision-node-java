@@ -12,7 +12,9 @@ import java.util.Map;
 import java.util.Objects;
 
 /**
- * An image sent with a decision, referred to by its id in the state or the questions.
+ * An image sent with a decision. The model sees it as {@code "Picture <n>"} (its place in the
+ * request's images, from 1) with its id beside it, so text in the state or the instructions can
+ * refer to it by either.
  *
  * <pre>{@code
  * Image.fromUrl("scan", "https://example.com/scan.webp");     // recommended: nothing is uploaded
@@ -171,6 +173,11 @@ public final class Image {
         return new Image(id, null, -1, mediaType, null, Objects.requireNonNull(uploadId, "uploadId"));
     }
 
+    /**
+     * The image's id, unique within a request. The model sees the image as {@code "Picture <n>"}
+     * (its place in the request's images, from 1) with this id beside it, so text in the state or
+     * the instructions can refer to it by either.
+     */
     public String id() {
         return id;
     }

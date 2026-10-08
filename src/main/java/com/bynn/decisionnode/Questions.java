@@ -174,9 +174,10 @@ public final class Questions {
     }
 
     /**
-     * One spot in the image with the id {@code image} (required when the request has two or more
-     * images), in {@code units}: {@code pixels} (the API's default) or {@code normalized}
-     * (fractions of the width and the height). A null argument is left out of the request.
+     * One spot in the image with the id {@code image} (a string, required when the request has two
+     * or more images; a reference by number, {@code "Picture 2"}, goes in the instructions), in
+     * {@code units}: {@code pixels} (the API's default) or {@code normalized} (fractions of the
+     * width and the height). A null argument is left out of the request.
      */
     public static Question point(Object instructions, String image, String units) {
         return place("point", instructions, image, units);

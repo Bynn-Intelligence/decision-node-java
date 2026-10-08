@@ -123,7 +123,8 @@ is `"pixels"` (the default: pixels of the image as sent) or `"normalized"` (frac
 width and the height). `present()` is the probability that what the instructions describe is in
 the image at all; `confidence()` the probability that the place is right if it is. `image()`,
 `width()` and `height()` name the image looked in and its size in pixels. The request needs an
-image, and `image` names the one to look in when it carries two or more (null leaves it out).
+image, and `image` names the one to look in by its id when it carries two or more (null leaves it
+out); a reference by number ("Picture 2") goes in the instructions.
 
 Answers are read by question id: `d.truth("id")`, `d.choice("id")`, `d.score("id")`,
 `d.number("id")`, `d.point("id")`, `d.box("id")`, or
@@ -221,6 +222,20 @@ Every form:
 | `Image.fromUrl(id, url)` | `{"id", "url"}` as given; never fetched by this client. `https` only, at most 2,048 characters |
 | `Image.fromPath(id, path)`, `Image.fromBytes(id, bytes[, mediaType])`, `Image.fromBase64(id, text[, mediaType])`, `Image.fromStream(id, in[, mediaType])` | Checked here, then inline as base64 or uploaded, by the threshold below |
 | `Image.fromUpload(id, uploadId[, mediaType])` | `{"id", "upload_id"}` as given |
+
+The model sees each image as "Picture 1", "Picture 2", ... with its id beside it, numbered from 1
+in the order of `images`, and each video as "Video 1", "Video 2", ... in the order of `videos`,
+numbered separately. Text in the state, the instructions or a criterion can refer to an image by
+position ("Picture 2", "image 2", "the second image", "the last image") or by its id ("the
+receipt", "`receipt`"), and to a video the same way ("Video 1" or its id):
+
+```java
+Decision d = dn.decide(DecideRequest.builder()
+    .image(Image.fromUrl("receipt", "https://files.example.com/claims/4411/receipt.jpg"))
+    .image(Image.fromUrl("statement", "https://files.example.com/claims/4411/statement.png"))
+    .question("charged", truth("Does the total in Picture 1 match the charge on the statement?"))
+    .build());
+```
 
 Local bytes are checked before anything is sent: JPEG, PNG or WebP by their first bytes (a media
 type you give must match them), at most 10 MB, at most 40 megapixels as read from the image header
