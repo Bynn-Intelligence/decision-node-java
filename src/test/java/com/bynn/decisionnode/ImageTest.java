@@ -42,17 +42,27 @@ class ImageTest {
     void contentFaultsRaiseTheApiErrorBeforeSending(@TempDir Path dir) throws Exception {
         Files.writeString(dir.resolve("t.txt"), "hello");
         Image text = Image.fromPath("t", dir.resolve("t.txt"));
-        BadRequestError e = assertThrows(BadRequestError.class, () -> LocalChecks.image(text, false));
+        BadRequestError e = assertThrows(BadRequestError.class, () -> LocalChecks.image(text, Map.of()));
         assertEquals("api_usage_error", e.errorType());
         assertNull(e.status());
         assertNull(e.requestId());
-        assertThrows(BadRequestError.class, () -> LocalChecks.image(Image.fromBytes("m", JPEG, "image/png"), false));
-        assertThrows(BadRequestError.class, () -> LocalChecks.image(Image.fromUrl("u", "http://example.com/a.png"), false));
-        assertThrows(BadRequestError.class, () -> LocalChecks.image(Image.fromUrl("u", "https://example.com/" + "a".repeat(2100)), false));
-        assertThrows(BadRequestError.class, () -> LocalChecks.image(Image.fromUrl("u", "https://example.com/a.png"), true));
-        assertThrows(BadRequestError.class, () -> LocalChecks.images(java.util.Collections.nCopies(5, Image.fromUrl("u", "https://e.com/a"))));
+        assertThrows(BadRequestError.class, () -> LocalChecks.image(Image.fromBytes("m", JPEG, "image/png"), Map.of()));
+        assertThrows(BadRequestError.class, () -> LocalChecks.image(Image.fromUrl("u", "http://example.com/a.png"), Map.of()));
+        BadRequestError longUrl = assertThrows(BadRequestError.class,
+                () -> LocalChecks.image(Image.fromUrl("u", "https://example.com/" + "a".repeat(2100)), Map.of()));
+        assertEquals("image_url_refused", longUrl.errorType());
+        for (String url : new String[] {"https://user@example.com/a", "https://example.com:8443/a", "https://10.1.2.3/a",
+                "https://[::1]/a", "https://[::ffff:192.168.1.1]/a", "https://169.254.169.254/a"}) {
+            assertEquals("image_url_refused",
+                    assertThrows(BadRequestError.class, () -> LocalChecks.image(Image.fromUrl("u", url), Map.of())).errorType(), url);
+        }
+        LocalChecks.image(Image.fromUrl("u", "https://example.com:443/a.png"), Map.of());
+        LocalChecks.image(Image.fromUrl("u", "https://8.8.8.8/a.png"), Map.of());
+        assertThrows(BadRequestError.class, () -> LocalChecks.frame(
+                Frame.builder().image(Image.fromUrl("u", "https://example.com/a.png")).build(), null, Map.of()));
+        assertThrows(BadRequestError.class, () -> LocalChecks.images(java.util.Collections.nCopies(5, Image.fromUrl("u", "https://e.com/a")), Map.of()));
         assertThrows(BadRequestError.class, () -> LocalChecks.images(java.util.List.of(
-                Image.fromUrl("u", "https://e.com/a"), Image.fromUrl("u", "https://e.com/b"))));
+                Image.fromUrl("u", "https://e.com/a"), Image.fromUrl("u", "https://e.com/b")), Map.of()));
     }
 
     @Test
@@ -60,7 +70,7 @@ class ImageTest {
         byte[] big = java.util.Arrays.copyOf(PNG, Image.MAX_BYTES + 10);
         Image img = Image.fromStream("big", new java.io.ByteArrayInputStream(big));
         assertNull(img.data());
-        BadRequestError e = assertThrows(BadRequestError.class, () -> LocalChecks.image(img, false));
+        BadRequestError e = assertThrows(BadRequestError.class, () -> LocalChecks.image(img, Map.of()));
         assertEquals("Image big is larger than 10 MB.", e.getMessage());
     }
 

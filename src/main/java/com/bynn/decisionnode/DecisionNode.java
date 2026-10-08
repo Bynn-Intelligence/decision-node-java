@@ -71,6 +71,7 @@ public final class DecisionNode {
     private final Transport transport;
     private final Uploads uploads;
     private final Batches batches;
+    private volatile Map<String, Map<String, Object>> held = Map.of();
 
     /** A client configured from the environment. */
     public DecisionNode() {
@@ -124,7 +125,7 @@ public final class DecisionNode {
         }
         this.transport = new Transport(apiKey, baseUrl, timeout, maxRetries, headers, http,
                 b.waiter != null ? b.waiter : Transport::delay);
-        this.uploads = new Uploads(transport, inlineThreshold);
+        this.uploads = new Uploads(transport, inlineThreshold, b.clock != null ? b.clock : System::currentTimeMillis);
         this.batches = new Batches(this);
     }
 
@@ -317,13 +318,16 @@ public final class DecisionNode {
             throw new IllegalArgumentException("questions must hold at least one question");
         }
         List<Object> images = request.images();
-        LocalChecks.images(images);
-        LocalChecks.questions(request.questions());
         Map<String, Object> head = new LinkedHashMap<>();
         String m = request.model();
         head.put("model", m != null && !m.isEmpty() ? m : model);
         head.put("state", request.state() == null ? "" : request.state());
         head.put("questions", systemone ? strict(request.questions()) : request.questions());
+        // The server's order: the body (nesting, the 422 entries, the first 400), then the images.
+        Map<String, Object> limits = limits((String) head.get("model"));
+        LocalChecks.request(LocalChecks.probe(head, images.size()),
+                systemone ? LocalChecks.Profile.SYSTEMONE : LocalChecks.Profile.DECIDE, limits);
+        LocalChecks.images(images, limits);
         if (images.isEmpty()) {
             return new Plan(path, head, images, Json.write(head), Set.of());
         }
@@ -709,7 +713,7 @@ public final class DecisionNode {
         List<Integer> todo = new ArrayList<>();
         try {
             Objects.requireNonNull(images, "images");
-            LocalChecks.images(images);
+            LocalChecks.images(images, limits(null));
             for (int i = 0; i < images.size(); i++) {
                 Image img = images.get(i);
                 if (img.url() != null) {
@@ -774,7 +778,6 @@ public final class DecisionNode {
         if (request.questions().isEmpty()) {
             throw new IllegalArgumentException("questions must hold at least one question");
         }
-        LocalChecks.questions(request.questions());
         Map<String, Object> body = new LinkedHashMap<>();
         String m = request.model();
         body.put("model", m != null && !m.isEmpty() ? m : model);
@@ -791,6 +794,7 @@ public final class DecisionNode {
         if (request.ttlSeconds() != null) {
             body.put("ttl_seconds", request.ttlSeconds());
         }
+        LocalChecks.sessionOpen(body, limits((String) body.get("model")));
         return body;
     }
 
@@ -874,8 +878,39 @@ public final class DecisionNode {
         return Transport.await(modelsAsync());
     }
 
+    /**
+     * {@code GET /v1/models}. The client also keeps the entries, so the limits only this list
+     * states (a model without number questions or sessions, a smaller window, the batch limits)
+     * are checked before later requests are sent.
+     */
     public CompletableFuture<List<ModelInfo>> modelsAsync() {
-        return transport.json("GET", "/v1/models", null, Transport.Policy.DEFAULT).thenApply(r -> Responses.models(r.object()));
+        return transport.json("GET", "/v1/models", null, Transport.Policy.DEFAULT).thenApply(r -> {
+            List<ModelInfo> models = Responses.models(r.object());
+            Map<String, Map<String, Object>> byName = new java.util.HashMap<>();
+            for (ModelInfo mi : models) {
+                if (mi.name() != null) {
+                    byName.put(mi.name(), mi.raw());
+                }
+            }
+            held = Collections.unmodifiableMap(byName);
+            return models;
+        });
+    }
+
+    /**
+     * The {@code /v1/models} entry of a model (null for the client's) with its name under
+     * {@code model}, when an earlier {@link #models()} call gave one; else empty, and the checks
+     * that need it are left to the server.
+     */
+    Map<String, Object> limits(String name) {
+        String n = name == null || name.isEmpty() ? model : name;
+        Map<String, Object> entry = held.get(n);
+        if (entry == null) {
+            return Map.of();
+        }
+        Map<String, Object> out = new java.util.HashMap<>(entry);
+        out.put("model", n);
+        return out;
     }
 
     /**
@@ -923,6 +958,7 @@ public final class DecisionNode {
         private HttpClient httpClient;
         private Function<String, String> environment = System::getenv;
         private Function<Long, CompletableFuture<Void>> waiter;
+        private java.util.function.LongSupplier clock;
 
         private Builder() {}
 
@@ -1044,6 +1080,15 @@ public final class DecisionNode {
          */
         Builder waiter(Function<Long, CompletableFuture<Void>> waiter) {
             this.waiter = Objects.requireNonNull(waiter);
+            return this;
+        }
+
+        /**
+         * The time, in epoch milliseconds, that upload URLs and cached uploads are judged by.
+         * Tests replace it to move the client's time with a mock server's.
+         */
+        Builder clock(java.util.function.LongSupplier clock) {
+            this.clock = Objects.requireNonNull(clock);
             return this;
         }
 

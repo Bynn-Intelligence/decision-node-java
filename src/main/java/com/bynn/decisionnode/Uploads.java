@@ -52,9 +52,12 @@ final class Uploads {
     /** Uploads under way, so concurrent requests with the same bytes share one. */
     private final Map<Key, CompletableFuture<String>> inflight = new ConcurrentHashMap<>();
 
-    Uploads(Transport transport, long inlineThreshold) {
+    private final java.util.function.LongSupplier clock;
+
+    Uploads(Transport transport, long inlineThreshold, java.util.function.LongSupplier clock) {
         this.transport = transport;
         this.inlineThreshold = inlineThreshold;
+        this.clock = clock;
     }
 
     static Key key(Image img) {
@@ -76,7 +79,7 @@ final class Uploads {
             if (e == null) {
                 return null;
             }
-            if (System.currentTimeMillis() >= e.expiresAtMillis - MARGIN_MS) {
+            if (clock.getAsLong() >= e.expiresAtMillis - MARGIN_MS) {
                 cache.remove(k);
                 return null;
             }
@@ -230,8 +233,9 @@ final class Uploads {
             body.add(f);
         }
         byte[] payload = Json.write(Map.of("files", body));
-        long presignedAt = System.currentTimeMillis();
         return transport.json("POST", "/v1/uploads", payload, Transport.Policy.DEFAULT).thenCompose(r -> {
+            // The URLs live expires_in seconds (300) from when the presign answered, by the client's clock.
+            long urlsExpire = urlsExpire(r);
             List<Object> uploads = Json.asList(r.object().get("uploads"));
             if (uploads == null || uploads.size() != files.size()) {
                 throw Responses.malformedAnswer(r.status(), r.headers(), r.object(),
@@ -242,7 +246,7 @@ final class Uploads {
                 Map<String, Object> up = Json.asMap(uploads.get(i));
                 Map.Entry<Key, Image> file = files.get(i);
                 Map<String, Object> fileBody = body.get(i);
-                puts.add(putOrPresignAgain(up, file, fileBody, presignedAt));
+                puts.add(putOrPresignAgain(up, file, fileBody, urlsExpire));
             }
             return CompletableFuture.allOf(puts.toArray(new CompletableFuture<?>[0])).thenApply(v -> {
                 List<String> ids = new ArrayList<>();
@@ -259,7 +263,7 @@ final class Uploads {
      * once. Then the upload id goes in the cache until its {@code expires_at}.
      */
     private CompletableFuture<String> putOrPresignAgain(Map<String, Object> up, Map.Entry<Key, Image> file,
-            Map<String, Object> fileBody, long presignedAt) {
+            Map<String, Object> fileBody, long urlsExpire) {
         if (up == null || !(up.get("upload_id") instanceof String) || !(up.get("url") instanceof String)) {
             return CompletableFuture.failedFuture(new ServerError(new ErrorInfo(201, null,
                     "the upload response has an entry without upload_id or url", null, null, up, Map.of())));
@@ -271,7 +275,7 @@ final class Uploads {
             }
             Throwable cause = Transport.unwrap(err);
             if (cause instanceof DecisionNodeError && Integer.valueOf(403).equals(((DecisionNodeError) cause).status())
-                    && System.currentTimeMillis() - presignedAt >= URL_TTL_MS) {
+                    && clock.getAsLong() >= urlsExpire) {
                 byte[] payload = Json.write(Map.of("files", List.of(fileBody)));
                 return transport.json("POST", "/v1/uploads", payload, Transport.Policy.DEFAULT).thenCompose(r -> {
                     List<Object> again = Json.asList(r.object().get("uploads"));
@@ -285,6 +289,11 @@ final class Uploads {
             }
             return CompletableFuture.<String>failedFuture(cause);
         }).thenCompose(java.util.function.Function.identity());
+    }
+
+    private long urlsExpire(Transport.Response r) {
+        Double seconds = Json.asDouble(r.object().get("expires_in"));
+        return clock.getAsLong() + (seconds != null ? Math.round(seconds * 1000) : URL_TTL_MS);
     }
 
     private String done(Map<String, Object> up, Key key) {

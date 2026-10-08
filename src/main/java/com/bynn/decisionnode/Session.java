@@ -197,9 +197,8 @@ public final class Session {
         }
         Object image = frame.image();
         try {
-            if (image instanceof Image) {
-                LocalChecks.image((Image) image, true);
-            }
+            // The frame's fixed rules, before anything is written: a refused frame takes no seq.
+            LocalChecks.frame(frame, raw.get("questions"), client.limits(model()));
         } catch (RuntimeException e) {
             return CompletableFuture.failedFuture(e);
         }

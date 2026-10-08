@@ -54,7 +54,7 @@ public final class Batches {
     public CompletableFuture<Batch> createAsync(List<BatchRequest> requests) {
         List<LinePlan> plans;
         try {
-            plans = plan(requests == null ? List.of() : requests);
+            plans = plan(requests == null ? List.of() : requests, true);
         } catch (RuntimeException e) {
             return CompletableFuture.failedFuture(e);
         }
@@ -75,10 +75,7 @@ public final class Batches {
     public CompletableFuture<Batch> addAsync(String batchId, List<BatchRequest> requests) {
         List<LinePlan> plans;
         try {
-            if (requests == null || requests.isEmpty()) {
-                throw new IllegalArgumentException("add needs at least one request");
-            }
-            plans = plan(requests);
+            plans = plan(requests == null ? List.of() : requests, false);
         } catch (RuntimeException e) {
             return CompletableFuture.failedFuture(e);
         }
@@ -153,6 +150,11 @@ public final class Batches {
     }
 
     public CompletableFuture<BatchPage> listAsync(Integer offset, Integer limit) {
+        try {
+            LocalChecks.listParams(offset, limit);
+        } catch (RuntimeException e) {
+            return CompletableFuture.failedFuture(e);
+        }
         StringBuilder q = new StringBuilder();
         if (offset != null) {
             q.append("offset=").append(offset);
@@ -206,7 +208,7 @@ public final class Batches {
         if (timeout == null || timeout.isNegative() || timeout.isZero()) {
             throw new IllegalArgumentException("timeout must be above 0, got " + timeout);
         }
-        List<LinePlan> plans = plan(requests == null ? List.of() : requests);
+        List<LinePlan> plans = plan(requests == null ? List.of() : requests, true);
         return createAsync(List.of()).thenCompose(draft -> {
             CompletableFuture<Batch> added = plans.isEmpty()
                     ? CompletableFuture.completedFuture(draft)
@@ -265,7 +267,8 @@ public final class Batches {
     private record LinePlan(Map<String, Object> head, List<Object> images, byte[] line) {}
 
     /** Checks every request before anything is sent and prepares its line. */
-    private List<LinePlan> plan(List<BatchRequest> requests) {
+    private List<LinePlan> plan(List<BatchRequest> requests, boolean allowEmpty) {
+        LocalChecks.lines(requests, allowEmpty, client.limits(null));
         List<LinePlan> out = new ArrayList<>(requests.size());
         for (int i = 0; i < requests.size(); i++) {
             BatchRequest r = requests.get(i);
@@ -275,14 +278,17 @@ public final class Batches {
             if (r.questions().isEmpty()) {
                 throw new IllegalArgumentException("requests[" + i + "]: questions must hold at least one question");
             }
-            LocalChecks.images(r.images());
-            LocalChecks.questions(r.questions());
             Map<String, Object> head = new LinkedHashMap<>();
             head.put("custom_id", r.customId());
             String m = r.model();
             head.put("model", m != null && !m.isEmpty() ? m : client.model());
             head.put("state", r.state() == null ? "" : r.state());
             head.put("questions", r.questions());
+            Map<String, Object> limits = client.limits((String) head.get("model"));
+            Map<String, Object> probe = new LinkedHashMap<>(head);
+            probe.remove("custom_id");
+            LocalChecks.request(LocalChecks.probe(probe, r.images().size()), LocalChecks.Profile.DECIDE, limits);
+            LocalChecks.images(r.images(), limits);
             byte[] line = null;
             if (r.images().isEmpty()) {
                 line = line(head);

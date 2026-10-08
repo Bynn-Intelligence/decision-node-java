@@ -5,7 +5,6 @@ import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.Objects;
 
 /**
  * One request of a batch: a decision request and the {@code custom_id} its result is found by.
@@ -35,7 +34,11 @@ public final class BatchRequest {
         this.model = b.model;
     }
 
-    /** A request with this {@code custom_id}, unique within the batch. */
+    /**
+     * A request with this {@code custom_id}: 1 to 512 characters, unique within the batch. A
+     * missing, empty or repeated id is refused with the API's {@link BadRequestError} before
+     * anything is sent.
+     */
     public static Builder builder(String customId) {
         return new Builder(customId);
     }
@@ -74,7 +77,7 @@ public final class BatchRequest {
         private String model;
 
         private Builder(String customId) {
-            this.customId = Objects.requireNonNull(customId, "customId");
+            this.customId = customId;
         }
 
         public Builder state(Object state) {
