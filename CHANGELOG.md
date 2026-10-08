@@ -52,6 +52,20 @@ DecisionNode SDK specification.
   `results` (read line by line) and `cancel`, and `runBatch` for the whole lifecycle.
 - `models()` returns the fields of specification 1.1 in `limits`.
 
+- `checkRequest` (for `decide` and the helpers, and for `openSession`), `checkSystemoneRequest`,
+  `Batches.checkCreateRequest`, `Batches.checkAddRequest` and `Session.checkFrame` run every local
+  check the call would run before sending, held `/v1/models` limits included, and throw what it
+  would throw. Nothing is sent or uploaded, and `checkFrame` uses no `seq`.
+- Held `/v1/models` limits are found by the entry's name, else by the entry that states the name
+  as its `alias` or pinned `version`; a model the list does not state is left to the server.
+- `uploadTimeout` (default `DEFAULT_UPLOAD_TIMEOUT`, 60 s): each storage `PUT` has its own timeout,
+  apart from the API attempt's.
+- Batch results stream line by line with an idle timeout while the reader waits for more data;
+  `results` reads the whole file however many lines it holds. A stalled read raises
+  `TimeoutError`.
+- The session's WebSocket is opened by the client's `HttpClient`, so it uses its proxy and
+  `SSLContext`.
+
 ### Changed in specification 1.1
 
 - `SPEC_VERSION` is `"1.1"`.

@@ -221,9 +221,12 @@ List<String> ids = dn.upload(List.of(Image.fromPath("scan", Path.of("scan.png"))
 dn.decide(state, questions, List.of(Image.fromUpload("scan", ids.get(0))), null);
 ```
 
-A failed `PUT` is retried on 5xx and connection errors; a storage error it cannot recover from
-raises `DecisionNodeError` with the storage status, `errorType()` `upload_failed` and the storage's
-error code in `reason()`.
+Each `PUT` has its own timeout (`uploadTimeout`, 60 s by default), apart from the API attempt's,
+since an image of 10 MB on a slow uplink needs longer than an API call. A failed `PUT` is retried
+on 5xx, timeouts and connection errors; one that still times out raises `TimeoutError`, and a
+storage error it cannot recover from raises `DecisionNodeError` with the storage status,
+`errorType()` `upload_failed` and the storage's error code in `reason()`. A `PUT` answered 403 once
+its URL has expired is presigned again, once.
 
 ## Sessions
 
@@ -254,7 +257,8 @@ s.end();
 - `openSession` always sends a model (the request's, else the client's). A `429`
   `session_limit_exceeded` is never retried and raises `SessionLimitError`, a `RateLimitError`.
 - `connect()` sends the API key in the handshake's `Authorization` header, never in the URL, with
-  the client's own headers. A session refused at connect closes at once: its `SessionClosed` is the
+  the client's own headers. The socket is opened by the client's `HttpClient`, so it uses the
+  same proxy and `SSLContext` as every other call. A session refused at connect closes at once: its `SessionClosed` is the
   first event.
 - `send` numbers frames from 1 unless a frame gives its own `seq`, and never waits for a reply. A
   frame's image follows the inline threshold (a small one inline, a large or cached one by upload
@@ -302,8 +306,10 @@ at most 10 MiB), finalizes it, polls at `pollInterval` (default 60 s, at least 1
 raised.
 
 The calls one by one are on `dn.batches()`: `create`, `add`, `finalize`, `get`, `list(offset, limit)`,
-`results` and `cancel`, each with an `...Async` form. Results are read line by line as you iterate,
-so a large file is never held whole; a line's error is a value (`BatchResult.error()`) of the class
+`results` and `cancel`, each with an `...Async` form. `results` reads the whole file, however many
+lines it holds, line by line as you iterate, so a large file is never held whole; the read fails
+with `TimeoutError` when no data arrives for the client's timeout while you wait for the next line,
+and a slow reader is never timed out; a line's error is a value (`BatchResult.error()`) of the class
 its status gives, never thrown. `create`, `add` and `finalize` are retried only on `429` and `529`,
 since a repeat after a lost answer could create a second draft; a finalize answered `409` is
 checked with `get`, and the batch is returned when an earlier finalize went through.
@@ -401,7 +407,23 @@ for a 422 a `ValidationError` whose `entries()` are the API's list. A local erro
 
 Limits that only `GET /v1/models` states (a model without number questions or sessions, a smaller
 `max_window`, the batch limits) are checked once `models()` has been called on the client, and
-left to the server until then. In `decideMany` one faulty request fails the whole call and nothing
+left to the server until then. A request's model finds its entry by name, else by the entry that
+states it as its `alias` or pinned `version`; a model the list does not state is left to the
+server.
+
+The same checks run on their own, without sending or uploading anything, so a request can be
+validated where it is built:
+
+```java
+dn.checkRequest(request);                    // as decide would send it
+dn.checkSystemoneRequest(request);           // as systemone would
+dn.checkRequest(sessionRequest);             // as openSession would
+dn.batches().checkCreateRequest(requests);   // as batches().create would; checkAddRequest for add
+session.checkFrame(frame);                   // as session.send would; uses no seq
+```
+
+Each returns normally when the request would be sent and otherwise throws exactly what sending
+would throw. In `decideMany` one faulty request fails the whole call and nothing
 is sent. Token limits depend on the model and stay the server's to judge.
 
 A problem with your own arguments is the JDK's `IllegalArgumentException`, thrown before
@@ -425,7 +447,9 @@ certificate or hostname checks (see Your own HttpClient). These are never wrappe
 - 400, 401, 402, 403, 404 and 422 are never retried.
 - Batch `create`, `add` and `finalize` are retried only on 429 and 529, and opening a session is
   never retried on `session_limit_exceeded`; see their sections.
-- Batch results are read as they stream: the timeout covers the wait for the response to begin.
+- Batch results are read as they stream: the timeout covers the wait for the response to begin,
+  then each wait for more data while you read.
+- An image upload's storage `PUT` has its own timeout, `uploadTimeout` (60 s by default).
 - Redirects are never followed, so the API key is never sent to another URL or over plain
   HTTP. A 3xx is a `DecisionNodeError` with its status. An `HttpClient` passed to the builder
   must not follow redirects either; see below.
@@ -440,6 +464,7 @@ DecisionNode dn = DecisionNode.builder()
     .timeout(Duration.ofSeconds(10))           // per attempt, above 0
     .maxRetries(2)                             // 0 or more
     .inlineThreshold(524_288)                  // bytes; local images under it go inline
+    .uploadTimeout(Duration.ofSeconds(60))     // per storage PUT of an image upload, above 0
     .header("x-decisionnode-safety-body", "true")
     .httpClient(HttpClient.newHttpClient())    // a proxy, an executor, TLS settings; see below
     .build();
@@ -496,7 +521,7 @@ The conformance suite is the language-neutral set of cases every DecisionNode SD
 needs Python 3.10 or later for its mock server. Every case runs twice, through the blocking
 methods and through the `...Async` methods. Without `DECISIONNODE_CONFORMANCE_DIR` the
 conformance task fails rather than skipping. The suite's mock serves uploads, sessions (a
-WebSocket) and batches as well; this SDK passes every case of suite 1.5 in both forms. CI checks the suite out at a pinned commit, set
+WebSocket) and batches as well; this SDK passes every case of suite 1.6 in both forms. CI checks the suite out at a pinned commit, set
 once as `CONFORMANCE_REF` in `.github/workflows/ci.yml`; every action there is pinned to a
 commit SHA and no checkout keeps its credentials.
 
