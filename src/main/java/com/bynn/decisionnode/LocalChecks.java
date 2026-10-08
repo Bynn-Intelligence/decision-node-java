@@ -44,16 +44,11 @@ final class LocalChecks {
     static final int MAX_CUSTOM_ID_CHARS = 512;
     static final int LIST_LIMIT_MAX = 100;
     private static final BigDecimal TWO_53 = BigDecimal.valueOf(9007199254740992L);
+    /** The question types the API takes (the older name of truth included, for a question in its wire form). */
     private static final Set<String> DECIDE_TYPES = Set.of("truth", "noul", "choice", "score", "number", "point", "box");
     private static final Set<String> UNITS = Set.of("pixels", "normalized");
-    private static final Set<String> SYSTEMONE_TYPES = Set.of("noul", "choice", "score");
     private static final Set<String> MEDIA_TYPES = Set.of("image/jpeg", "image/png", "image/webp");
     private static final Pattern IPV4 = Pattern.compile("\\d{1,3}(\\.\\d{1,3}){3}");
-
-    /** Which path a request goes to: the strict path takes fewer types. */
-    enum Profile {
-        DECIDE, SYSTEMONE
-    }
 
     private LocalChecks() {}
 
@@ -64,16 +59,16 @@ final class LocalChecks {
      * every question. {@code body} holds the request's images as placeholders, so the nesting
      * counts them; the images themselves are checked by {@link #images}.
      */
-    static void request(Map<String, Object> body, Profile profile, Map<String, Object> limits) {
-        checkBody(body, profile, limits, List.of(), null, List.of());
+    static void request(Map<String, Object> body, Map<String, Object> limits) {
+        checkBody(body, limits, List.of(), null, List.of());
     }
 
     /**
-     * {@link #request(Map, Profile, Map)} with the request's images, which a {@code point} or
+     * {@link #request(Map, Map)} with the request's images, which a {@code point} or
      * {@code box} question must name among ({@link Image}s or wire-form maps), and its videos:
      * more images or videos than a request takes are 422 entries after the questions'.
      */
-    static void request(Map<String, Object> body, Profile profile, Map<String, Object> limits, List<?> images,
+    static void request(Map<String, Object> body, Map<String, Object> limits, List<?> images,
             List<?> videos) {
         List<String> ids = new ArrayList<>(images.size());
         for (Object o : images) {
@@ -83,7 +78,7 @@ final class LocalChecks {
             }
         }
         List<Map<String, Object>> extra = new ArrayList<>();
-        checkBody(body, profile, limits, extra, ids, counts(images, videos, limits));
+        checkBody(body, limits, extra, ids, counts(images, videos, limits));
     }
 
     /**
@@ -142,7 +137,7 @@ final class LocalChecks {
      * {@code imageIds} null leaves out the point and box rules on images (a session's open);
      * {@code tail} holds the 422 entries that follow the questions' (the counts).
      */
-    private static void checkBody(Map<String, Object> body, Profile profile, Map<String, Object> limits,
+    private static void checkBody(Map<String, Object> body, Map<String, Object> limits,
             List<Map<String, Object>> extra, List<String> imageIds, List<Map<String, Object>> tail) {
         nesting(body, 0);
         List<Map<String, Object>> entries = new ArrayList<>(extra);
@@ -154,7 +149,7 @@ final class LocalChecks {
         Map<String, Object> questions = Json.asMap(body.get("questions"));
         if (questions != null) {
             for (Map.Entry<String, Object> e : questions.entrySet()) {
-                DecisionNodeError fault = question(e.getKey(), e.getValue(), entries, profile, limits, imageIds);
+                DecisionNodeError fault = question(e.getKey(), e.getValue(), entries, limits, imageIds);
                 if (deferred == null) {
                     deferred = fault;
                 }
@@ -210,7 +205,7 @@ final class LocalChecks {
     }
 
     private static DecisionNodeError question(String qid, Object value, List<Map<String, Object>> entries,
-            Profile profile, Map<String, Object> limits, List<String> imageIds) {
+            Map<String, Object> limits, List<String> imageIds) {
         List<Object> base = List.of("body", "questions", qid);
         Map<String, Object> q = wire(value);
         if (q == null && value != null && !scalar(value) && !(value instanceof Collection) && !value.getClass().isArray()) {
@@ -225,10 +220,8 @@ final class LocalChecks {
             entries.add(entry("missing", append(base, "type"), "Field required", q, null));
             return null;
         }
-        Set<String> known = profile == Profile.SYSTEMONE ? SYSTEMONE_TYPES : DECIDE_TYPES;
-        if (!(type instanceof String) || !known.contains(type)) {
-            // An unknown type is the API's 400 "Invalid request."; on /v1/systemone a number
-            // question is unknown from the start, its fields unread.
+        if (!(type instanceof String) || !DECIDE_TYPES.contains(type)) {
+            // An unknown type is the API's 400 "Invalid request.".
             return usage("Invalid request.", "question '" + qid + "': unknown type " + jsonText(type));
         }
         List<Object> loc = append(base, type);
@@ -281,7 +274,7 @@ final class LocalChecks {
                     entries.add(entry("missing", append(loc, "criteria"), "Field required", q, null));
                     return null;
                 }
-                List<Object> levels = levels(criteria, profile);
+                List<Object> levels = levels(criteria);
                 if (levels == null) {
                     entries.add(entry("list_type", append(loc, "criteria"), "Input should be a valid list", criteria, null));
                     return null;
@@ -302,7 +295,7 @@ final class LocalChecks {
                 }
                 return null;
             }
-            default: { // truth, and the wire type the strict path takes for it
+            default: { // truth, and its older name in a question's wire form
                 if (criteria != null && !(criteria instanceof Map)) {
                     entries.add(entry("dict_type", append(loc, "criteria"), "Input should be a valid dictionary", criteria, null));
                     return null;
@@ -325,14 +318,14 @@ final class LocalChecks {
     }
 
     /** Score levels: a list, or on /v1/decide an object keyed "0" to "K-1"; null when neither. */
-    private static List<Object> levels(Object criteria, Profile profile) {
+    private static List<Object> levels(Object criteria) {
         if (criteria instanceof Collection) {
             return new ArrayList<>((Collection<?>) criteria);
         }
         if (criteria instanceof Object[]) {
             return List.of((Object[]) criteria);
         }
-        if (criteria instanceof Map && profile == Profile.DECIDE) {
+        if (criteria instanceof Map) {
             Map<?, ?> m = (Map<?, ?>) criteria;
             List<Object> out = new ArrayList<>();
             for (int i = 0; i < m.size(); i++) {
@@ -540,7 +533,7 @@ final class LocalChecks {
 
     /**
      * Every image of a request: ids, URLs, upload references and local bytes. Their count is one
-     * of the request's 422 entries ({@link #request(Map, Profile, Map, List, List)}).
+     * of the request's 422 entries ({@link #request(Map, Map, List, List)}).
      */
     static void images(List<?> images, Map<String, Object> limits) {
         Set<String> ids = new HashSet<>();
@@ -772,7 +765,7 @@ final class LocalChecks {
         }
         Map<String, Object> questions = new LinkedHashMap<>();
         questions.put("questions", body.get("questions"));
-        checkBody(questions, Profile.DECIDE, limits, entries, null, List.of());
+        checkBody(questions, limits, entries, null, List.of());
         if (Boolean.FALSE.equals(sessions.get("enabled"))) {
             throw usage("Model " + limits.get("model") + " does not serve sessions.", null);
         }

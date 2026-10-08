@@ -259,7 +259,7 @@ public final class DecisionNode {
     public CompletableFuture<Decision> decideAsync(DecideRequest request) {
         Plan plan;
         try {
-            plan = plan("/v1/decide", request, false);
+            plan = plan("/v1/decide", request);
         } catch (RuntimeException e) {
             return CompletableFuture.failedFuture(e);
         }
@@ -279,56 +279,6 @@ public final class DecisionNode {
         return decideAsync(DecideRequest.builder().state(state).questions(questions).images(images).videos(videos).model(model).build());
     }
 
-    // ------------------------------------------------------------------ systemone
-
-    /** Sends one {@code POST /v1/systemone}. See {@link #systemone(Object, Map, List, String)}. */
-    public Decision systemone(Object state, Map<String, ?> questions) {
-        return systemone(state, questions, null, null);
-    }
-
-    /**
-     * Sends one {@code POST /v1/systemone}, the strict path that takes {@code truth},
-     * {@code choice} and {@code score} questions. The model is always sent: the given one, else
-     * the client's. A {@code truth} question is written in the wire type that path takes; its
-     * answer comes back as a {@link TruthAnswer}. Images are sent as on {@link #decide}.
-     */
-    public Decision systemone(Object state, Map<String, ?> questions, List<?> images, String model) {
-        return systemone(state, questions, images, null, model);
-    }
-
-    /** {@link #systemone(Object, Map, List, String)} with videos. */
-    public Decision systemone(Object state, Map<String, ?> questions, List<?> images, List<?> videos, String model) {
-        return systemone(DecideRequest.builder().state(state).questions(questions).images(images).videos(videos).model(model).build());
-    }
-
-    /** {@link #systemone(Object, Map, List, String)} from a {@link DecideRequest}. */
-    public Decision systemone(DecideRequest request) {
-        return Transport.await(systemoneAsync(request));
-    }
-
-    public CompletableFuture<Decision> systemoneAsync(Object state, Map<String, ?> questions) {
-        return systemoneAsync(state, questions, null, null);
-    }
-
-    public CompletableFuture<Decision> systemoneAsync(Object state, Map<String, ?> questions, List<?> images, String model) {
-        return systemoneAsync(state, questions, images, null, model);
-    }
-
-    public CompletableFuture<Decision> systemoneAsync(
-            Object state, Map<String, ?> questions, List<?> images, List<?> videos, String model) {
-        return systemoneAsync(DecideRequest.builder().state(state).questions(questions).images(images).videos(videos).model(model).build());
-    }
-
-    public CompletableFuture<Decision> systemoneAsync(DecideRequest request) {
-        Plan plan;
-        try {
-            plan = plan("/v1/systemone", request, true);
-        } catch (RuntimeException e) {
-            return CompletableFuture.failedFuture(e);
-        }
-        return send(plan).thenApply(r -> Responses.decision(r.object(), r.headers()));
-    }
-
     // ------------------------------------------------------------------ one request, checked and sent
 
     /**
@@ -342,8 +292,8 @@ public final class DecisionNode {
      * the caller's arguments ({@link IllegalArgumentException}), then the API's fixed rules (the
      * API's own error class).
      */
-    private Plan plan(String path, DecideRequest request, boolean systemone) {
-        Map<String, Object> head = checked(request, systemone);
+    private Plan plan(String path, DecideRequest request) {
+        Map<String, Object> head = checked(request);
         List<Object> images = request.images();
         if (images.isEmpty()) {
             return new Plan(path, head, images, Json.write(head), Set.of());
@@ -364,7 +314,7 @@ public final class DecisionNode {
      * Every local check of a decision, in the server's order, and the body without its images.
      * Nothing is sent or uploaded.
      */
-    private Map<String, Object> checked(DecideRequest request, boolean systemone) {
+    private Map<String, Object> checked(DecideRequest request) {
         if (request == null) {
             throw new IllegalArgumentException("request must not be null");
         }
@@ -376,13 +326,12 @@ public final class DecisionNode {
         String m = request.model();
         head.put("model", m != null && !m.isEmpty() ? m : model);
         head.put("state", request.state() == null ? "" : request.state());
-        head.put("questions", systemone ? strict(request.questions()) : request.questions());
+        head.put("questions", request.questions());
         // The server's order: the body (nesting, the 422 entries, the first 400), then the
         // images, then the videos.
         Map<String, Object> limits = limits((String) head.get("model"));
         List<Object> videos = request.videos();
-        LocalChecks.request(LocalChecks.probe(head, images.size(), videos),
-                systemone ? LocalChecks.Profile.SYSTEMONE : LocalChecks.Profile.DECIDE, limits, images, videos);
+        LocalChecks.request(LocalChecks.probe(head, images.size(), videos), limits, images, videos);
         LocalChecks.images(images, limits);
         List<Object> wires = LocalChecks.videos(videos, images, limits);
         if (!wires.isEmpty()) {
@@ -405,12 +354,7 @@ public final class DecisionNode {
      * @throws IllegalArgumentException for an argument that cannot be sent
      */
     public void checkRequest(DecideRequest request) {
-        Json.write(checked(request, false));
-    }
-
-    /** {@link #checkRequest(DecideRequest)} for {@link #systemone(DecideRequest)}, the strict path. */
-    public void checkSystemoneRequest(DecideRequest request) {
-        Json.write(checked(request, true));
+        Json.write(checked(request));
     }
 
     /**
@@ -434,22 +378,6 @@ public final class DecisionNode {
             }
         }
         return uncached && total >= inlineThreshold;
-    }
-
-    /** {@code truth} written in the wire type {@code /v1/systemone} takes for it. */
-    private static Map<String, Object> strict(Map<String, Object> questions) {
-        Map<String, Object> out = new LinkedHashMap<>();
-        for (Map.Entry<String, Object> e : questions.entrySet()) {
-            Map<String, Object> q = LocalChecks.wire(e.getValue());
-            if (q != null && "truth".equals(q.get("type"))) {
-                Map<String, Object> copy = new LinkedHashMap<>(q);
-                copy.put("type", "noul");
-                out.put(e.getKey(), copy);
-            } else {
-                out.put(e.getKey(), e.getValue());
-            }
-        }
-        return out;
     }
 
     /**
@@ -552,7 +480,7 @@ public final class DecisionNode {
         List<Plan> items = new ArrayList<>(requests.size());
         for (int i = 0; i < requests.size(); i++) {
             try {
-                items.add(plan("/v1/decide", requests.get(i), false));
+                items.add(plan("/v1/decide", requests.get(i)));
             } catch (IllegalArgumentException e) {
                 throw new IllegalArgumentException("requests[" + i + "]: " + e.getMessage(), e);
             }
@@ -756,7 +684,7 @@ public final class DecisionNode {
         Plan plan;
         try {
             plan = plan("/v1/decide",
-                    DecideRequest.builder().state(state).question(id, q).images(images).videos(videos).model(model).build(), false);
+                    DecideRequest.builder().state(state).question(id, q).images(images).videos(videos).model(model).build());
         } catch (RuntimeException e) {
             return CompletableFuture.failedFuture(e);
         }

@@ -17,14 +17,13 @@ and the point and box question types.
   same), read with `Decision.point` and `Decision.box`; `Answer` permits both. An answer with a
   field missing or of the wrong type is an `UnknownAnswer`. Their rules are checked locally with
   the API's 422 entries: an image in the request, `image` naming one of them (required with two
-  or more), and the units; a point or box without instructions is the API's 400. `systemone`
-  refuses both types locally, like number questions.
+  or more), and the units; a point or box without instructions is the API's 400.
 - Videos sent as the frames the caller sampled: `Video` (`Video.of(id, frames)` with `fps`,
   `start` and `end`) and `VideoFrame` (`fromBytes`, `fromBase64`), on `DecideRequest` and
-  `BatchRequest` (`video`, `videos`) and as a `videos` argument of `decide`, `systemone`, `check`,
-  `classify`, `score`, `number` and `gate` and their async forms. A map in the wire form is accepted wherever a `Video` or a `VideoFrame` is, and
-  checked by the same rules. Frames always go inline: they are never uploaded, cached, resized or
-  re-encoded.
+  `BatchRequest` (`video`, `videos`) and as a `videos` argument of `decide`, `check`, `classify`,
+  `score`, `number` and `gate` and their async forms. A map in the wire form is accepted wherever
+  a `Video` or a `VideoFrame` is, and checked by the same rules. Frames always go inline: they are
+  never uploaded, cached, resized or re-encoded.
 - The API's video rules are checked before anything is sent, with the API's own message: an id
   that is present and unique across images and videos, at least one frame, frame times at least 0
   and strictly increasing, a JPEG, PNG or WebP media type for every frame, `fps` above 0 and at
@@ -54,8 +53,6 @@ DecisionNode SDK specification.
 - `number` questions: the `Questions.number` builder (a bound left null is left out, so the API's
   defaults apply), `NumberAnswer` with `number`, `expected`, `confidence` and `probabilities` keyed
   by the value as the API wrote it, the `number` helper, and `Decision.number(id)`.
-- Every `truth` answer is a `TruthAnswer`, whichever path sent it.
-- `systemone`, the strict `/v1/systemone` path, with the model always sent.
 - Image URLs are the recommended form and pass through after a local check (`https`, at most
   2,048 characters). `Image.fromBase64`, `Image.fromStream` and `Image.fromUpload` join the
   existing forms.
@@ -71,7 +68,7 @@ DecisionNode SDK specification.
 - Every fixed, documented request rule is checked locally, in the server's order, before
   anything is sent, and raises what the API would answer: the same class and `error_type`, the
   documented message, and for a 422 a `ValidationError` with the API's entries. Covered: the
-  128-level nesting limit; unknown question types (a `number` question on `systemone` included);
+  128-level nesting limit; unknown question types;
   questions without a type or criteria, and instructions, states, descriptions or levels of the
   wrong type; option and level counts; a `truth` without text; number grids (`float_type`,
   finiteness, 2^53, decimals, the decimal bound, `min` above `max`, 4,096 values) and a missing
@@ -92,7 +89,7 @@ DecisionNode SDK specification.
   `results` (read line by line) and `cancel`, and `runBatch` for the whole lifecycle.
 - `models()` returns the fields of specification 1.1 in `limits`.
 
-- `checkRequest` (for `decide` and the helpers, and for `openSession`), `checkSystemoneRequest`,
+- `checkRequest` (for `decide` and the helpers, and for `openSession`),
   `Batches.checkCreateRequest`, `Batches.checkAddRequest` and `Session.checkFrame` run every local
   check the call would run before sending, held `/v1/models` limits included, and throw what it
   would throw. Nothing is sent or uploaded, and `checkFrame` uses no `seq`.

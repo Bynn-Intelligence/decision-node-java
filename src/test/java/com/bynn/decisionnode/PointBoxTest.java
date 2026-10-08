@@ -84,9 +84,7 @@ class PointBoxTest {
                 () -> dn.checkRequest(DecideRequest.builder().image(BELT).question("pick", box(null)).build()));
         assertEquals("Box question must have instructions: pick", e.getMessage());
         assertNull(e.errorType());
-        // The strict path takes neither type; a session's open skips the image rules.
-        assertThrows(BadRequestError.class,
-                () -> dn.checkSystemoneRequest(DecideRequest.builder().image(BELT).question("pick", point("Where?")).build()));
+        // A session's open skips the image rules.
         dn.checkRequest(SessionRequest.builder().question("pick", point("Where?")).build());
     }
 }

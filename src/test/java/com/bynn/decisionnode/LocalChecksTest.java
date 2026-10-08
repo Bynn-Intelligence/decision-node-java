@@ -18,7 +18,7 @@ import org.junit.jupiter.api.Test;
 /** The API's fixed rules, checked before a request is sent, with the API's own errors. */
 class LocalChecksTest {
     private static void questions(Map<String, ?> qs) {
-        LocalChecks.request(Map.of("questions", qs), LocalChecks.Profile.DECIDE, Map.of());
+        LocalChecks.request(Map.of("questions", qs), Map.of());
     }
 
     @Test
@@ -79,15 +79,13 @@ class LocalChecksTest {
         }
         Object tooDeep = deep;
         BadRequestError nested = assertThrows(BadRequestError.class,
-                () -> LocalChecks.request(Map.of("state", tooDeep, "questions", Map.of("q", truth("?"))), LocalChecks.Profile.DECIDE, Map.of()));
+                () -> LocalChecks.request(Map.of("state", tooDeep, "questions", Map.of("q", truth("?"))), Map.of()));
         assertEquals("Invalid request.", nested.getMessage());
         assertEquals("api_usage_error", nested.errorType());
         BadRequestError unknown = assertThrows(BadRequestError.class, () -> questions(Map.of("q", Map.of("type", "bool"))));
         assertEquals("Invalid request.", unknown.getMessage());
-        assertThrows(BadRequestError.class, () -> LocalChecks.request(Map.of("questions", Map.of("n", number("?"))),
-                LocalChecks.Profile.SYSTEMONE, Map.of()));
         ValidationError state = assertThrows(ValidationError.class,
-                () -> LocalChecks.request(Map.of("state", 42, "questions", Map.of("q", truth("?"))), LocalChecks.Profile.DECIDE, Map.of()));
+                () -> LocalChecks.request(Map.of("state", 42, "questions", Map.of("q", truth("?"))), Map.of()));
         assertEquals(3, state.entries().size());
     }
 

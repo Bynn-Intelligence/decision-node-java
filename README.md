@@ -4,9 +4,9 @@ The official Java and Kotlin client for the [DecisionNode](https://decisionnode.
 typed questions about any state and get probabilities back.
 
 Java 17 or later. Works from Kotlin as is. Implements version 1.2 of the DecisionNode SDK
-specification, which `DecisionNode.SPEC_VERSION` holds: decisions with `truth`, `choice`, `score`
-and `number` questions, up to 16 images and videos sent as frames, `/v1/systemone`, the models
-list, image uploads, sessions and the Batch API.
+specification, which `DecisionNode.SPEC_VERSION` holds: decisions with `truth`, `choice`, `score`,
+`number`, `point` and `box` questions, up to 16 images and videos sent as frames, the models list,
+image uploads, sessions and the Batch API.
 
 ## Install
 
@@ -124,15 +124,13 @@ width and the height). `present()` is the probability that what the instructions
 the image at all; `confidence()` the probability that the place is right if it is. `image()`,
 `width()` and `height()` name the image looked in and its size in pixels. The request needs an
 image, and `image` names the one to look in when it carries two or more (null leaves it out).
-`systemone` takes neither type.
 
 Answers are read by question id: `d.truth("id")`, `d.choice("id")`, `d.score("id")`,
 `d.number("id")`, `d.point("id")`, `d.box("id")`, or
 `d.get("id")` and `d.answers()` for the generic `Answer`. `Answer` is a sealed interface, so a
 `switch` or Kotlin `when` over it is exhaustive. An answer of a type newer than this SDK comes
 back as `UnknownAnswer` with its fields in `raw()`. So does an answer of a known type whose
-fields are missing or of the wrong type; the rest of the decision is read as usual. Every
-`truth` answer is a `TruthAnswer`, whichever path sent it (`/v1/systemone` included).
+fields are missing or of the wrong type; the rest of the decision is read as usual.
 
 Numbers are exactly what the API sent: no rounding and no renormalising.
 
@@ -150,7 +148,6 @@ A `Decision` also carries `model()` (the version that answered), `usage()`, `req
 | `score(state, instructions, levels)`, `score(state, instructions, levels, images[, videos], model)` | One `score` question; returns the `ScoreAnswer` |
 | `number(state, instructions, min, max, step)`, `number(..., images[, videos], model)` | One `number` question; returns the `NumberAnswer` |
 | `gate(action, context)`, `gate(action, context, images[, videos], model)` | Should this action run? See below |
-| `systemone(state, questions)`, `systemone(state, questions, images[, videos], model)` | One `POST /v1/systemone`, the strict path for `truth`, `choice` and `score`. The model is always sent; a `truth` question goes in the wire type that path takes and comes back as a `TruthAnswer` |
 | `upload(images)` | Uploads images now and returns their upload ids; see Images |
 | `openSession(request)`, `supervise(request, feed, onReply)` | Sessions; see below |
 | `batches()`, `runBatch(requests)` | The Batch API; see below |
@@ -285,8 +282,8 @@ d.warnings();   // the server's notes when it read a video at a lower rate or re
 | `Video.of(id, frames)`, `.fps(...)`, `.start(...)`, `.end(...)` | A video: its id (unique across the request's images and videos), its frames with strictly increasing times, and optionally the most frames a second to read (above 0 and at most 4; the API's default is 2) and the window `[start, end)` on the frames' own times |
 
 A request takes up to 4 videos, each a `Video` or a map in the wire form, and a frame may be a map
-too; both are checked by the same rules. `decide`, `systemone`, the helpers, `decideMany` and
-batch requests take videos; sessions do not. Frames always go inline: they are never uploaded or
+too; both are checked by the same rules. `decide`, the helpers, `decideMany` and batch requests
+take videos; sessions do not. Frames always go inline: they are never uploaded or
 cached, and no frame is resized or re-encoded. `Decision.usage()` carries `videoFrames()` (the
 frames read) and `videoSeconds()` (the seconds of the windows read), both null for a request
 without videos, and `Decision.warnings()` the server's notes exactly as sent (empty when there are
@@ -451,12 +448,11 @@ for a 422 a `ValidationError` whose `entries()` are the API's list. A local erro
 `status()` and no `requestId()`. The rules are checked in the server's order:
 
 - the 128-level nesting limit (`BadRequestError`, `api_usage_error`, "Invalid request.");
-- questions: an unknown type (a `number`, `point` or `box` question on `systemone` included), a
-  missing type or criteria, instructions, a state, a description or a level that is not a
-  string, an object or an array, a score without levels, a number grid that cannot be built, and
-  a point or box in a request without images, without `image` among two or more images, naming
-  no image of the request, or with `units` other than `pixels` and `normalized`
-  (`ValidationError`); a choice of no or more than 255 options, a score of more than 10 levels,
+- questions: an unknown type, a missing type or criteria, instructions, a state, a description or
+  a level that is not a string, an object or an array, a score without levels, a number grid that
+  cannot be built, and a point or box in a request without images, without `image` among two or
+  more images, naming no image of the request, or with `units` other than `pixels` and
+  `normalized` (`ValidationError`); a choice of no or more than 255 options, a score of more than 10 levels,
   a `truth` with neither instructions nor criteria, a number, point or box question without
   instructions (`BadRequestError` with the API's plain message and no error type);
 - more than 16 images or more than 4 videos (`ValidationError` with the API's `too_long` entry on
@@ -490,7 +486,6 @@ validated where it is built:
 
 ```java
 dn.checkRequest(request);                    // as decide would send it
-dn.checkSystemoneRequest(request);           // as systemone would
 dn.checkRequest(sessionRequest);             // as openSession would
 dn.batches().checkCreateRequest(requests);   // as batches().create would; checkAddRequest for add
 session.checkFrame(frame);                   // as session.send would; uses no seq
@@ -595,7 +590,7 @@ The conformance suite is the language-neutral set of cases every DecisionNode SD
 needs Python 3.10 or later for its mock server. Every case runs twice, through the blocking
 methods and through the `...Async` methods. Without `DECISIONNODE_CONFORMANCE_DIR` the
 conformance task fails rather than skipping. The suite's mock serves uploads, sessions (a
-WebSocket) and batches as well; this SDK passes every case of suite 1.9 in both forms. CI checks the suite out at a pinned commit, set
+WebSocket) and batches as well; this SDK passes every case of suite 1.10 in both forms. CI checks the suite out at a pinned commit, set
 once as `CONFORMANCE_REF` in `.github/workflows/ci.yml`; every action there is pinned to a
 commit SHA and no checkout keeps its credentials.
 

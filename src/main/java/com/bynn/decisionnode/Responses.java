@@ -91,8 +91,8 @@ final class Responses {
         Object type = raw.get("type");
         Map<String, Object> view = Collections.unmodifiableMap(raw);
         if ("truth".equals(type) || "noul".equals(type)) {
-            // /v1/systemone answers a truth question under the path's own wire type, with the
-            // value in the field of that name: the same answer.
+            // An answer under the older name of truth carries its value in the field of that
+            // name: the same answer.
             Double truth = Json.asDouble(raw.get((String) type));
             if (truth != null) {
                 return new TruthAnswer(truth, view);

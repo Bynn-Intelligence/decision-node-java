@@ -1195,7 +1195,6 @@ class ConformanceTest {
             // The same request handed to the SDK's check instead of being sent.
             switch (method) {
                 case "decide" -> client.checkRequest(decideRequest(args));
-                case "systemone" -> client.checkSystemoneRequest(decideRequest(args));
                 case "open_session" -> client.checkRequest(sessionRequest(args));
                 case "batches.create" -> client.batches().checkCreateRequest(batchRequests(args.get("requests")));
                 case "batches.add" -> client.batches().checkAddRequest(batchRequests(args.get("requests")));
@@ -1206,8 +1205,6 @@ class ConformanceTest {
         switch (method) {
             case "decide":
                 return async ? join(client.decideAsync(decideRequest(args))) : client.decide(decideRequest(args));
-            case "systemone":
-                return async ? join(client.systemoneAsync(decideRequest(args))) : client.systemone(decideRequest(args));
             case "decide_many": {
                 List<DecideRequest> reqs = new ArrayList<>();
                 for (Object r : list(args.get("requests"))) {

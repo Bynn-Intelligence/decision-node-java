@@ -42,7 +42,7 @@ class VideoChecksTest {
         choice.put("type", "choice");
         choice.put("instructions", "?");
         ValidationError e = assertThrows(ValidationError.class, () -> LocalChecks.request(
-                Map.of("questions", Map.of("route", choice)), LocalChecks.Profile.DECIDE, Map.of(), List.of(), five));
+                Map.of("questions", Map.of("route", choice)), Map.of(), List.of(), five));
         assertEquals(2, e.entries().size());
         assertEquals("missing", ((Map<?, ?>) e.entries().get(0)).get("type"));
         Map<?, ?> count = (Map<?, ?>) e.entries().get(1);
