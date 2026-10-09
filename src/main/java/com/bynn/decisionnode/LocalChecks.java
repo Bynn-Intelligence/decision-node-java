@@ -535,6 +535,9 @@ final class LocalChecks {
      * Every image of a request: ids, URLs, upload references and local bytes. Their count is one
      * of the request's 422 entries ({@link #request(Map, Map, List, List)}).
      */
+    /** The longest image id the API takes, in characters (Unicode code points). */
+    static final int MAX_IMAGE_ID_CHARS = 64;
+
     static void images(List<?> images, Map<String, Object> limits) {
         Set<String> ids = new HashSet<>();
         for (int i = 0; i < images.size(); i++) {
@@ -543,7 +546,12 @@ final class LocalChecks {
             if (!(id instanceof String) || ((String) id).isEmpty()) {
                 throw usage("Image " + i + " needs an id.", null);
             }
-            if (!ids.add((String) id)) {
+            String text = (String) id;
+            // Counted in code points, as the API counts characters, never UTF-16 units.
+            if (text.codePointCount(0, text.length()) > MAX_IMAGE_ID_CHARS) {
+                throw usage("Image " + i + ": its id is longer than " + MAX_IMAGE_ID_CHARS + " characters.", null);
+            }
+            if (!ids.add(text)) {
                 throw usage("Duplicate image id: " + id, null);
             }
             if (o instanceof Image) {

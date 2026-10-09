@@ -36,6 +36,13 @@ Implements version 1.3 of the DecisionNode SDK specification: boosters and fine-
   be sent, raises the new `RequestTooLargeError` before anything is sent or uploaded, in `decide`,
   the helpers, `decideMany`, `checkRequest` and each batch line. Every 413 from the API is a
   `RequestTooLargeError` too (the base `DecisionNodeError` before), never retried.
+- An error whose body is not JSON (an HTML or text page, or an empty body) is classed by its
+  status alone, with no error type, the request id and reason from their headers, and the message
+  `HTTP <status> <status text>` with ` (request id <id>)` when there is one. The body is never
+  copied into the error.
+- An image id longer than 64 characters, counted as Unicode code points, is refused before
+  anything is sent: `BadRequestError` (`api_usage_error`) "Image <n>: its id is longer than 64
+  characters.", after the empty-id check and before the duplicate check.
 
 ### Changed
 

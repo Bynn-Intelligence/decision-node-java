@@ -404,9 +404,13 @@ class ClientTest {
         handler = s -> new Reply(400, Map.of(), "{\"detail\":{\"error_type\":\"max_tokens_exceeded\"}}");
         DecisionNodeError e = assertThrows(ContextLimitError.class, () -> client().decide("s", Map.of("q", truth("?"))));
         assertEquals("", e.getMessage());
-        handler = s -> new Reply(500, Map.of(), "");
+        handler = s -> new Reply(500, Map.of(), "{}");
         e = assertThrows(ServerError.class, () -> client(Map.of()).maxRetries(0).build().decide("s", Map.of("q", truth("?"))));
         assertEquals("", e.getMessage());
+        // An empty body is not JSON: the client describes the status itself.
+        handler = s -> new Reply(500, Map.of(), "");
+        e = assertThrows(ServerError.class, () -> client(Map.of()).maxRetries(0).build().decide("s", Map.of("q", truth("?"))));
+        assertEquals("HTTP 500 Internal Server Error", e.getMessage());
         handler = s -> new Reply(200, Map.of(), "not json");
         e = assertThrows(ServerError.class, () -> client().decide("s", Map.of("q", truth("?"))));
         assertEquals("", e.getMessage());

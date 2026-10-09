@@ -1,5 +1,6 @@
 package com.bynn.decisionnode;
 
+import java.io.IOException;
 import java.net.http.HttpHeaders;
 import java.time.Duration;
 import java.time.ZonedDateTime;
@@ -385,7 +386,59 @@ final class Responses {
     }
 
     static DecisionNodeError error(int status, HttpHeaders headers, byte[] bodyBytes) {
-        return error(status, of(headers), lowerCased(headers), Json.readOrNull(bodyBytes));
+        Object body;
+        try {
+            body = Json.read(bodyBytes);
+        } catch (IOException e) {
+            return notJsonError(status, of(headers), lowerCased(headers));
+        }
+        return error(status, of(headers), lowerCased(headers), body);
+    }
+
+    /** The status texts of an error whose body is not JSON, the same in every DecisionNode SDK. */
+    private static final Map<Integer, String> STATUS_TEXT = Map.ofEntries(
+            Map.entry(400, "Bad Request"),
+            Map.entry(401, "Unauthorized"),
+            Map.entry(402, "Payment Required"),
+            Map.entry(403, "Forbidden"),
+            Map.entry(404, "Not Found"),
+            Map.entry(405, "Method Not Allowed"),
+            Map.entry(408, "Request Timeout"),
+            Map.entry(409, "Conflict"),
+            Map.entry(410, "Gone"),
+            Map.entry(413, "Content Too Large"),
+            Map.entry(422, "Unprocessable Content"),
+            Map.entry(429, "Too Many Requests"),
+            Map.entry(500, "Internal Server Error"),
+            Map.entry(502, "Bad Gateway"),
+            Map.entry(503, "Service Unavailable"),
+            Map.entry(504, "Gateway Timeout"),
+            Map.entry(529, "Overloaded"));
+
+    /**
+     * An error status whose body is not JSON (an HTML or text page of the edge or a proxy, or an
+     * empty body): the class by status alone, no error type, and the client's own description,
+     * {@code HTTP 413 Content Too Large (request id req_1)}. The body is never read into any field.
+     */
+    static DecisionNodeError notJsonError(int status, Headers headers, Map<String, List<String>> allHeaders) {
+        String requestId = headers.get("x-request-id");
+        String text = STATUS_TEXT.get(status);
+        String message = "HTTP " + status + (text == null ? "" : " " + text)
+                + (requestId == null ? "" : " (request id " + requestId + ")");
+        ErrorInfo info = new ErrorInfo(
+                status, null, message, requestId, headers.get("x-decisionnode-error"), null, allHeaders);
+        return switch (status) {
+            case 400 -> new BadRequestError(info);
+            case 401 -> new AuthenticationError(info);
+            case 402 -> new InsufficientCreditError(info);
+            case 403 -> new PermissionDeniedError(info);
+            case 404 -> new NotFoundError(info);
+            case 413 -> new RequestTooLargeError(info);
+            case 422 -> new ValidationError(info, List.of());
+            case 429 -> new RateLimitError(info, retryAfter(headers));
+            case 529 -> new OverloadedError(info, retryAfter(headers));
+            default -> status >= 500 && status <= 599 ? new ServerError(info) : new DecisionNodeError(info);
+        };
     }
 
     /**

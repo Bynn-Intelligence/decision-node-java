@@ -582,6 +582,13 @@ that named boosters (empty otherwise).
 
 Only a 2xx response is a success. A 2xx whose body is not JSON is a `ServerError`.
 
+An error whose body is not JSON (an HTML or text page from a proxy, or an empty body) is classed
+by its status alone, as in the table below: a 400 is a `BadRequestError` and a 403 a
+`PermissionDeniedError`, never their special cases. Its `errorType()` is null, `requestId()` and
+`reason()` come from their headers, and the message is the client's own description, for example
+`HTTP 413 Content Too Large` or `HTTP 408 Request Timeout (request id req_1)`. The body is never
+copied into the error. Retries are the same as for any other body.
+
 | Status | Error | Extra |
 |---|---|---|
 | 400 | `BadRequestError`; `ContextLimitError` when the input is longer than the model accepts | |
@@ -626,7 +633,8 @@ for a 422 a `ValidationError` whose `entries()` are the API's list. A local erro
 - more than 16 images or more than 4 videos (`ValidationError` with the API's `too_long` entry on
   `["body", "images"]` or `["body", "videos"]`, after the request's other entries; a local image
   is listed by its id and media type, without its bytes);
-- images: an empty or repeated id, bytes that are not JPEG, PNG or WebP or not of
+- images: an empty id, an id longer than 64 characters (counted as Unicode code points, "Image
+  1: its id is longer than 64 characters."), a repeated id, bytes that are not JPEG, PNG or WebP or not of
   the type given, over 10 MB, over 40 megapixels, an upload reference of another media type
   (`api_usage_error`); a URL that is not `https` (`api_usage_error`), or over 2,048 characters,
   with user information, on a port other than 443 or on a literal private address
