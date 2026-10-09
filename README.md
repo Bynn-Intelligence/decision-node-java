@@ -395,9 +395,11 @@ DecideRequest.builder()
   it is exhaustive.
 - `usage().boosterTokens()` is the readings' share of the input tokens, and `usage().boosters()`
   the booster calls billed; both are null for a request without boosters.
-- Price: USD 0.002 per booster call billed, one per booster and image read with status `ok`, drawn
-  from the prepaid balance with the request's tokens. A booster that timed out or failed is free,
-  and so is a refused request's. The readings' tokens are input tokens at the model's price.
+- Billing: a booster call is billed for each booster and image read with status `ok`, drawn from
+  the prepaid balance with the request's tokens; each booster's price is on
+  [the pricing page](https://decisionnode.com/docs/pricing#boosters). A booster that timed out or
+  failed is free, and so is a refused request's. The readings' tokens are input tokens at the
+  model's price.
 - The API checks the list before any booster runs and before any charge: a name that is not a
   booster is a `BadRequestError` (`booster_unknown`), a booster that needs images on a request
   without any, or an image id that is not the request's, too (`booster_input_mismatch`), a booster
