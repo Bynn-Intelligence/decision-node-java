@@ -12,9 +12,9 @@ import java.util.Map;
  *                    {@code skipped} (none of the request's images is one it reads); or any other
  *                    value as sent. Null when absent
  * @param latencyMs   how long the booster took, in milliseconds; null when absent
- * @param billedCalls the calls of this booster billed on this request (one per image read, none
- *                    for a reading served from the last hour's results or one that timed out or
- *                    failed); null when absent
+ * @param billedCalls the calls of this booster billed on this request (one per image read with
+ *                    status {@code ok}, none for a booster that timed out or failed); null when
+ *                    absent
  * @param results     one reading per image read, in the order sent; empty unless {@code status} is
  *                    {@code ok}
  * @param raw         the entry exactly as sent
