@@ -990,14 +990,10 @@ class ConformanceTest {
             n.put("generated", g.generated());
             n.put("confidence", g.confidence());
             n.put("method", g.method());
-            if (g.topGenerator() == null) {
-                n.put("top_generator", null);
-            } else {
-                Map<String, Object> top = new LinkedHashMap<>();
-                top.put("name", g.topGenerator().name());
-                top.put("probability", g.topGenerator().probability());
-                n.put("top_generator", top);
-            }
+            Map<String, Object> top = new LinkedHashMap<>();
+            top.put("name", g.topGenerator().name());
+            top.put("probability", g.topGenerator().probability());
+            n.put("top_generator", top);
             n.put("c2pa_signer", g.c2paSigner());
         } else {
             n.put("kind", "unknown");

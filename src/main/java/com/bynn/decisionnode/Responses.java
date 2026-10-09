@@ -127,21 +127,18 @@ final class Responses {
         Double generated = Json.asDouble(raw.get("generated"));
         Double confidence = Json.asDouble(raw.get("confidence"));
         Object method = raw.get("method");
+        // The c2pa_signer key is always sent: null when the file carries no Content Credentials.
         Object signer = raw.get("c2pa_signer");
         if (!(image instanceof String) || generated == null || confidence == null || !(method instanceof String)
-                || (signer != null && !(signer instanceof String))) {
+                || !raw.containsKey("c2pa_signer") || (signer != null && !(signer instanceof String))) {
             return null;
         }
-        TopGenerator top = null;
-        Object t = raw.get("top_generator");
-        if (t != null) {
-            Map<String, Object> m = Json.asMap(t);
-            Double p = m == null ? null : Json.asDouble(m.get("probability"));
-            if (m == null || !(m.get("name") instanceof String) || p == null) {
-                return null;
-            }
-            top = new TopGenerator((String) m.get("name"), p);
+        Map<String, Object> m = Json.asMap(raw.get("top_generator"));
+        Double p = m == null ? null : Json.asDouble(m.get("probability"));
+        if (m == null || !(m.get("name") instanceof String) || p == null) {
+            return null;
         }
+        TopGenerator top = new TopGenerator((String) m.get("name"), p);
         return new AiGeneratedReading((String) image, generated, confidence, (String) method, top, (String) signer, raw);
     }
 

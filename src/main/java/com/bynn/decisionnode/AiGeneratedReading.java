@@ -11,7 +11,7 @@ import java.util.Map;
  * @param confidence   how sure the reading is, 0 to 1
  * @param method       how it was read: {@code inference} (from the pixels), {@code c2pa} (the
  *                     file's Content Credentials say so), or any other value as sent
- * @param topGenerator the likeliest generator; null when the reading names none
+ * @param topGenerator the likeliest generator
  * @param c2paSigner   who signed the file's Content Credentials; null when it has none
  * @param raw          the reading exactly as sent
  */
