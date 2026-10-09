@@ -191,8 +191,9 @@ class BoostersTest {
                 + "{\"image\":\"c3d4\",\"generated\":0.93,\"confidence\":0.86,\"method\":\"inference\","
                 + "\"top_generator\":{\"name\":\"Generator A\",\"probability\":0.71},\"c2pa_signer\":null},"
                 + "{\"image\":\"e5f6\",\"generated\":1.0,\"confidence\":1.0,\"method\":\"c2pa\","
-                + "\"top_generator\":{\"name\":\"Generator B\",\"probability\":0.64},"
-                + "\"c2pa_signer\":\"Example Signer\"}]}},"
+                + "\"top_generator\":null,\"c2pa_signer\":\"Example Signer\"},"
+                + "{\"image\":\"g7\",\"generated\":0.1,\"confidence\":0.8,\"method\":\"inference\","
+                + "\"top_generator\":null,\"c2pa_signer\":null,\"c2pa\":\"untrusted\",\"region\":{\"x\":4}}]}},"
                 + "\"usage\":{\"input_tokens\":341,\"output_tokens\":0,\"booster_tokens\":72,\"boosters\":3}}");
         assertEquals(List.of("age", "ai_generated"), new ArrayList<>(d.evidence().keySet()));
         Evidence age = d.evidence("age");
@@ -219,7 +220,11 @@ class BoostersTest {
         AiGeneratedReading c = assertInstanceOf(AiGeneratedReading.class, d.evidence("ai_generated").results().get(1));
         assertEquals("c2pa", c.method());
         assertEquals("Example Signer", c.c2paSigner());
-        assertEquals(new TopGenerator("Generator B", 0.64), c.topGenerator());
+        assertNull(c.topGenerator());
+        assertNull(c.c2pa());
+        AiGeneratedReading photo = assertInstanceOf(AiGeneratedReading.class, d.evidence("ai_generated").results().get(2));
+        assertNull(photo.topGenerator());
+        assertEquals("untrusted", photo.c2pa());
         assertEquals(72L, d.usage().boosterTokens());
         assertEquals(3L, d.usage().boosters());
         assertEquals(341L, d.usage().inputTokens());
@@ -252,7 +257,9 @@ class BoostersTest {
                 + "{\"image\":\"a\",\"generated\":true,\"confidence\":0.5,\"method\":\"inference\",\"c2pa_signer\":null},"
                 + "{\"image\":\"a\",\"generated\":0.5,\"confidence\":0.5,\"method\":\"inference\",\"top_generator\":{\"name\":3,\"probability\":0.1}},"
                 + "{\"image\":\"a\",\"generated\":0.5,\"confidence\":0.5,\"method\":\"inference\",\"c2pa_signer\":5},"
-                + "{\"image\":\"a\",\"generated\":0.5,\"confidence\":0.5,\"method\":\"inference\",\"top_generator\":null,\"c2pa_signer\":null},"
+                + "{\"image\":\"a\",\"generated\":0.5,\"confidence\":0.5,\"method\":\"inference\",\"c2pa_signer\":null},"
+                + "{\"image\":\"a\",\"generated\":0.5,\"confidence\":0.5,\"method\":\"inference\",\"top_generator\":\"x\",\"c2pa_signer\":null},"
+                + "{\"image\":\"a\",\"generated\":0.5,\"confidence\":0.5,\"method\":\"inference\",\"top_generator\":null,\"c2pa_signer\":null,\"c2pa\":true},"
                 + "{\"image\":\"a\",\"generated\":0.5,\"confidence\":0.5,\"method\":\"inference\","
                 + "\"top_generator\":{\"name\":\"Generator A\",\"probability\":0.1}}]}}}");
         UnknownReading fresh = assertInstanceOf(UnknownReading.class, d.evidence("fresh").results().get(0));

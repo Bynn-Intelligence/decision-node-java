@@ -366,7 +366,8 @@ d.usage().boosters();                                    // booster calls billed
   one reading per image read (empty unless the status is `ok`). A reading is an `AgeReading`
   (`image`, `faces`, and `ageYears`, `low`, `high`, `confidence`, each null when `faces` is 0), an
   `AiGeneratedReading` (`image`, `generated`, `confidence`, `method`, `topGenerator` with its
-  `name` and `probability`, `c2paSigner`), or an `UnknownReading` with its fields in `raw()` for a
+  `name` and `probability`, null unless the image is likely generated, `c2paSigner`, and `c2pa`:
+  `untrusted` when the file's Content Credentials validate but their signer is not trusted), or an `UnknownReading` with its fields in `raw()` for a
   booster newer than this SDK. `Reading` is a sealed interface, so a `switch` or Kotlin `when` over
   it is exhaustive.
 - `usage().boosterTokens()` is the readings' share of the input tokens, and `usage().boosters()`

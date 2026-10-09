@@ -127,19 +127,27 @@ final class Responses {
         Double generated = Json.asDouble(raw.get("generated"));
         Double confidence = Json.asDouble(raw.get("confidence"));
         Object method = raw.get("method");
-        // The c2pa_signer key is always sent: null when the file carries no Content Credentials.
+        // The top_generator and c2pa_signer keys are always sent, null when unset; c2pa only when
+        // the file carries Content Credentials.
         Object signer = raw.get("c2pa_signer");
+        Object c2pa = raw.get("c2pa");
         if (!(image instanceof String) || generated == null || confidence == null || !(method instanceof String)
-                || !raw.containsKey("c2pa_signer") || (signer != null && !(signer instanceof String))) {
+                || !raw.containsKey("c2pa_signer") || (signer != null && !(signer instanceof String))
+                || (c2pa != null && !(c2pa instanceof String)) || !raw.containsKey("top_generator")) {
             return null;
         }
-        Map<String, Object> m = Json.asMap(raw.get("top_generator"));
-        Double p = m == null ? null : Json.asDouble(m.get("probability"));
-        if (m == null || !(m.get("name") instanceof String) || p == null) {
-            return null;
+        TopGenerator top = null;
+        Object t = raw.get("top_generator");
+        if (t != null) {
+            Map<String, Object> m = Json.asMap(t);
+            Double p = m == null ? null : Json.asDouble(m.get("probability"));
+            if (m == null || !(m.get("name") instanceof String) || p == null) {
+                return null;
+            }
+            top = new TopGenerator((String) m.get("name"), p);
         }
-        TopGenerator top = new TopGenerator((String) m.get("name"), p);
-        return new AiGeneratedReading((String) image, generated, confidence, (String) method, top, (String) signer, raw);
+        return new AiGeneratedReading(
+                (String) image, generated, confidence, (String) method, top, (String) signer, (String) c2pa, raw);
     }
 
     /** A JSON number with no fractional part, as a long; null for anything else. */
