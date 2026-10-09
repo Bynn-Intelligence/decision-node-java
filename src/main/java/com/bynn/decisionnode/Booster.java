@@ -14,6 +14,11 @@ import java.util.Objects;
  * the decision. Its reading is added to what the model sees as evidence and comes back in
  * {@link Decision#evidence()}.
  *
+ * <p>The usual form is a plain list of names, sent as {@code "boosters": ["age", "ai_generated"]}:
+ * {@code .boosters(List.of("age", "ai_generated"))}. A {@code Booster} is for a booster that
+ * needs a setting, and is sent as {@code {"name", "images"?, "require"?, "options"?}}; one with no
+ * setting is sent as its bare name, so the list stays the plain list of names:
+ *
  * <pre>{@code
  * DecideRequest req = DecideRequest.builder()
  *     .image(Image.fromUrl("selfie", "https://files.example.com/selfie.jpg"))
@@ -24,8 +29,8 @@ import java.util.Objects;
  *     .build();
  * }</pre>
  *
- * <p>A plain name is enough when the booster needs no settings: {@code .booster("age")}. A booster
- * in its JSON wire form, a map, is accepted wherever a {@code Booster} is. Names are not checked
+ * <p>A booster in its JSON wire form, a map, is accepted wherever a {@code Booster} is and sent as
+ * given. Names are not checked
  * here: an unknown name, a booster turned off for the workspace or a malformed list is the API's
  * to answer, before any booster runs and before any charge.
  */
@@ -73,6 +78,7 @@ public final class Booster {
         return new Booster(name, images, require, Collections.unmodifiableMap(new LinkedHashMap<>(options)));
     }
 
+    /** The booster's name. */
     public String name() {
         return name;
     }
@@ -92,11 +98,19 @@ public final class Booster {
         return options;
     }
 
-    /** The wire form: {@code {"booster", "images", "require", "options"}}, each setting only when given. */
+    /**
+     * The wire form: the bare name when no setting is given, else
+     * {@code {"name", "images", "require", "options"}} with each setting only when given.
+     */
     @JsonValue
+    public Object wire() {
+        return images == null && require == null && options == null ? name : toMap();
+    }
+
+    /** The object form {@code {"name", "images", "require", "options"}}, each setting only when given. */
     public Map<String, Object> toMap() {
         Map<String, Object> out = new LinkedHashMap<>();
-        out.put("booster", name);
+        out.put("name", name);
         if (images != null) {
             out.put("images", images);
         }
@@ -117,7 +131,7 @@ public final class Booster {
             if (b == null) {
                 throw new IllegalArgumentException("boosters[" + i + "] is null");
             }
-            out.add(b instanceof Booster ? ((Booster) b).toMap() : b);
+            out.add(b instanceof Booster ? ((Booster) b).wire() : b);
         }
         return out;
     }

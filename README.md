@@ -337,8 +337,7 @@ exactly as before. Two boosters are available:
 Decision d = dn.decide(DecideRequest.builder()
     .image(Image.fromUpload("selfie", "upl_..."))
     .image(Image.fromUrl("upload", "https://files.example.com/upload.jpg"))
-    .booster("age")                                                        // reads every image
-    .booster(Booster.of("ai_generated").images("upload").require(true))   // one image, required
+    .boosters(List.of("age", "ai_generated"))                  // sent as "boosters": ["age", "ai_generated"]
     .question("adult", truth("Is the person in `selfie` an adult?"))
     .question("synthetic", truth("Is `upload` AI-generated?"))
     .build());
@@ -351,7 +350,7 @@ for (Reading r : age.results()) {
         System.out.println(a.image() + " " + a.ageYears() + " (" + a.low() + " to " + a.high() + ")");
     }
 }
-AiGeneratedReading g = (AiGeneratedReading) d.evidence("ai_generated").results().get(0);
+AiGeneratedReading g = (AiGeneratedReading) d.evidence("ai_generated").results().get(1);
 g.generated();                                           // 0.93
 g.method();                                              // "inference", or "c2pa" from Content Credentials
 g.c2paSigner();                                          // who signed them, or null
@@ -359,11 +358,26 @@ d.usage().boosterTokens();                               // the readings' share 
 d.usage().boosters();                                    // booster calls billed
 ```
 
-- `booster(name)` names a booster that reads every image of the request; `Booster.of(name)` adds
-  settings: `images(ids...)` (the images it reads), `require(true)` and `options(map)`. A booster
-  in its wire form, a map, is accepted too. A request takes up to 4 boosters, each at most once,
-  in the order given. `decide`, the helpers, `decideMany` and batch requests take boosters;
-  sessions do not.
+A booster that needs a setting is a `Booster` object, sent as
+`{"name": ..., "images": [...], "require": true, "options": {...}}` with each setting only when
+given (a `Booster` with no setting is sent as its bare name). Here the age booster reads every image, and the AI-generated booster reads only `upload`
+and must answer:
+
+```java
+DecideRequest.builder()
+    .image(Image.fromUpload("selfie", "upl_..."))
+    .image(Image.fromUrl("upload", "https://files.example.com/upload.jpg"))
+    .booster("age")
+    .booster(Booster.of("ai_generated").images("upload").require(true))
+    .question("synthetic", truth("Is `upload` AI-generated?"))
+    .build();
+```
+
+- A booster is named by its name, `booster(name)` or `boosters(List.of(...))`. `Booster.of(name)`
+  adds settings: `images(ids...)` (the images it reads), `require(true)` and `options(map)`. A
+  booster in its wire form, a map, is accepted too and sent as given. A request takes up to 4
+  boosters, each at most once, in the order given. `decide`, the helpers, `decideMany` and batch
+  requests take boosters; sessions do not.
 - `require(true)`: a booster that fails or does not answer in time fails the request with
   `OverloadedError`, `errorType()` `booster_unavailable`, which is retried like any 529. Without
   it, the decision runs without that reading and its evidence says why.
@@ -374,8 +388,8 @@ d.usage().boosters();                                    // booster calls billed
   (`image`, `faces`, and `ageYears`, `low`, `high`, `confidence`, each null when `faces` is 0), an
   `AiGeneratedReading` (`image`, `generated`, `confidence`, `method`, `topGenerator` with its
   `name` and `probability`, null unless the image is likely generated, `c2paSigner`, and `c2pa`:
-  `untrusted` when the file's Content Credentials validate but their signer is not trusted), or an `UnknownReading` with its fields in `raw()` for a
-  booster newer than this SDK. `Reading` is a sealed interface, so a `switch` or Kotlin `when` over
+  `untrusted` when the file's Content Credentials validate but their signer is not trusted), or an
+  `UnknownReading` with its fields in `raw()` for a booster newer than this SDK. `Reading` is a sealed interface, so a `switch` or Kotlin `when` over
   it is exhaustive.
 - `usage().boosterTokens()` is the readings' share of the input tokens, and `usage().boosters()`
   the booster calls billed; both are null for a request without boosters.

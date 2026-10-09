@@ -1584,7 +1584,7 @@ class ConformanceTest {
                     case "$booster": {
                         // Booster(name, images, require, options), each setting only when present
                         Map<String, Object> a = map(decode(e.getValue(), ctx));
-                        Booster b = Booster.of((String) (a.containsKey("booster") ? a.get("booster") : a.get("name")));
+                        Booster b = Booster.of((String) a.get("name"));
                         if (a.get("images") != null) {
                             List<String> ids = new ArrayList<>();
                             for (Object o : list(a.get("images"))) {

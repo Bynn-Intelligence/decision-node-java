@@ -14,7 +14,9 @@ Implements version 1.3 of the DecisionNode SDK specification: boosters and fine-
   `Booster.of(name)` and its `images`, `require` and `options` settings (a name or a wire-form map
   is accepted too), on `BatchRequest`, `decideMany`, and as a `boosters` argument of `decide`,
   `check`, `classify`, `score`, `number` and `gate` and their async forms. The list is sent in the
-  order given and left out of the body when empty; the API checks it.
+  order given and left out of the body when empty; the API checks it. A name is sent as the
+  string, a `Booster` as `{"name", "images"?, "require"?, "options"?}`, or as its bare name when
+  it has no setting.
 - `Decision.evidence()`: one `Evidence` per booster (`version`, `status`, `latencyMs`, `results`),
   null when the request named none, with the readings `AgeReading`, `AiGeneratedReading` (and its
   `TopGenerator`) and, for a booster this SDK does not know or a malformed reading,

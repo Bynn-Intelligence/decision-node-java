@@ -86,20 +86,24 @@ class BoostersTest {
 
     @Test
     void boosterWireForms() {
-        assertEquals(Map.of("booster", "age"), Booster.of("age").toMap());
+        assertEquals(Map.of("name", "age"), Booster.of("age").toMap());
+        // No setting: the bare name, so a list of them is the plain list of names.
+        assertEquals("age", Booster.of("age").wire());
+        assertEquals(List.of("age", "ai_generated"), Booster.wires(List.of(Booster.of("age"), Booster.of("ai_generated"))));
+        assertEquals(new String(Json.write(Booster.of("age")), StandardCharsets.UTF_8), "\"age\"");
         Map<String, Object> full = Booster.of("ai_generated").images("c3d4").require(true).options(Map.of("k", 1)).toMap();
-        assertEquals(List.of("booster", "images", "require", "options"), new ArrayList<>(full.keySet()));
+        assertEquals(List.of("name", "images", "require", "options"), new ArrayList<>(full.keySet()));
         assertEquals(List.of("c3d4"), full.get("images"));
         assertEquals(true, full.get("require"));
         assertEquals(Map.of("k", 1), full.get("options"));
-        assertEquals(Map.of("booster", "age", "require", false), Booster.of("age").require(false).toMap());
-        assertEquals(new String(Json.write(Booster.of("age").images("a")), StandardCharsets.UTF_8), "{\"booster\":\"age\",\"images\":[\"a\"]}");
+        assertEquals(Map.of("name", "age", "require", false), Booster.of("age").require(false).toMap());
+        assertEquals(new String(Json.write(Booster.of("age").images("a")), StandardCharsets.UTF_8), "{\"name\":\"age\",\"images\":[\"a\"]}");
     }
 
     @Test
     void boostersAreSentInOrderInEveryForm() throws IOException {
         Map<String, Object> wire = new LinkedHashMap<>();
-        wire.put("booster", "custom");
+        wire.put("name", "custom");
         wire.put("options", Map.of("level", 2));
         client().decide(DecideRequest.builder()
                 .state("s")
@@ -111,8 +115,8 @@ class BoostersTest {
                 .model("decisionnode-1.0-flash@acme/fraud:3")
                 .build());
         Map<String, Object> body = lastBody();
-        assertEquals(List.of("age", Map.of("booster", "ai_generated", "images", List.of("c3d4"), "require", true),
-                Map.of("booster", "custom", "options", Map.of("level", 2))), body.get("boosters"));
+        assertEquals(List.of("age", Map.of("name", "ai_generated", "images", List.of("c3d4"), "require", true),
+                Map.of("name", "custom", "options", Map.of("level", 2))), body.get("boosters"));
         assertEquals("decisionnode-1.0-flash@acme/fraud:3", body.get("model"));
     }
 
@@ -131,7 +135,7 @@ class BoostersTest {
         assertEquals(List.of("age"), lastBody().get("boosters"));
         handler = s -> new Reply(200, Map.of(), OK);
         client().gate("deploy", null, null, null, null, List.of(Booster.of("age").require(true)));
-        assertEquals(List.of(Map.of("booster", "age", "require", true)), lastBody().get("boosters"));
+        assertEquals(List.of(Map.of("name", "age", "require", true)), lastBody().get("boosters"));
         client().decideMany(List.of(DecideRequest.builder().state("s").question("q", truth("?")).booster("ai_generated").build()));
         assertEquals(List.of("ai_generated"), lastBody().get("boosters"));
     }
