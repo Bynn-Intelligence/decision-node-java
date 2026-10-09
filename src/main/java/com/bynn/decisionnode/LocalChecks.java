@@ -539,6 +539,14 @@ final class LocalChecks {
     static final int MAX_IMAGE_ID_CHARS = 64;
 
     static void images(List<?> images, Map<String, Object> limits) {
+        images(images, limits, true);
+    }
+
+    /**
+     * The image rules; {@code idLength} false leaves out the id's length, for {@code upload},
+     * which sends no id.
+     */
+    static void images(List<?> images, Map<String, Object> limits, boolean idLength) {
         Set<String> ids = new HashSet<>();
         for (int i = 0; i < images.size(); i++) {
             Object o = images.get(i);
@@ -548,7 +556,7 @@ final class LocalChecks {
             }
             String text = (String) id;
             // Counted in code points, as the API counts characters, never UTF-16 units.
-            if (text.codePointCount(0, text.length()) > MAX_IMAGE_ID_CHARS) {
+            if (idLength && text.codePointCount(0, text.length()) > MAX_IMAGE_ID_CHARS) {
                 throw usage("Image " + i + ": its id is longer than " + MAX_IMAGE_ID_CHARS + " characters.", null);
             }
             if (!ids.add(text)) {

@@ -634,7 +634,8 @@ for a 422 a `ValidationError` whose `entries()` are the API's list. A local erro
   `["body", "images"]` or `["body", "videos"]`, after the request's other entries; a local image
   is listed by its id and media type, without its bytes);
 - images: an empty id, an id longer than 64 characters (counted as Unicode code points, "Image
-  1: its id is longer than 64 characters."), a repeated id, bytes that are not JPEG, PNG or WebP or not of
+  1: its id is longer than 64 characters."; not a session frame's image, which goes without its
+  id), a repeated id, bytes that are not JPEG, PNG or WebP or not of
   the type given, over 10 MB, over 40 megapixels, an upload reference of another media type
   (`api_usage_error`); a URL that is not `https` (`api_usage_error`), or over 2,048 characters,
   with user information, on a port other than 443 or on a literal private address

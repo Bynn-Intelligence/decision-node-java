@@ -100,6 +100,8 @@ class NonJsonErrorsTest {
         assertEquals("api_usage_error", tooLong.errorType());
         assertNull(tooLong.status());
         assertNull(tooLong.requestId());
+        // upload sends no id, so it does not check the id's length.
+        LocalChecks.images(List.of(Image.fromUrl(repeat(0x20000, 65), "https://example.com/a.jpg")), Map.of(), false);
     }
 
     @Test

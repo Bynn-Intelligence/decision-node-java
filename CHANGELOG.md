@@ -42,7 +42,9 @@ Implements version 1.3 of the DecisionNode SDK specification: boosters and fine-
   copied into the error.
 - An image id longer than 64 characters, counted as Unicode code points, is refused before
   anything is sent: `BadRequestError` (`api_usage_error`) "Image <n>: its id is longer than 64
-  characters.", after the empty-id check and before the duplicate check.
+  characters.", after the empty-id check and before the duplicate check, on every body that
+  carries the ids: `decide`, the helpers, `decideMany`, batch lines and `checkRequest`. A session
+  frame's image, which goes without its id, and `upload` are not checked for it.
 
 ### Changed
 

@@ -993,7 +993,8 @@ public final class DecisionNode {
                 // One presign takes 1 to 16 files: its own 400, before anything is sent.
                 throw LocalChecks.usage("files: 1 to " + MAX_UPLOAD_FILES + " files, got " + images.size() + ".", null);
             }
-            LocalChecks.images(images, limits(null));
+            // upload sends no image id, so the id's length is not checked here.
+            LocalChecks.images(images, limits(null), false);
             for (int i = 0; i < images.size(); i++) {
                 Image img = images.get(i);
                 if (img.url() != null) {
