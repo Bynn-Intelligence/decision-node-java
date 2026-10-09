@@ -15,8 +15,9 @@ import java.util.Map;
  * @param billedCalls the calls of this booster billed on this request (one per image read with
  *                    status {@code ok}, none for a booster that timed out or failed); null when
  *                    absent
- * @param results     one reading per image read, in the order sent; empty unless {@code status} is
- *                    {@code ok}
+ * @param results     one entry per picture, in the order sent; a picture the booster did not read
+ *                    (it timed out or failed, or could not decode the picture) is an
+ *                    {@link UnknownReading} holding only its image, {@code status} saying why
  * @param raw         the entry exactly as sent
  */
 public record Evidence(

@@ -386,7 +386,9 @@ DecideRequest.builder()
   null when the request named none. Each has `version()`, `status()` (`ok`, `timeout`, `error` or
   `skipped`, when none of the request's images is one it reads), `latencyMs()`, `billedCalls()`
   (the calls of that booster billed on this request, null when the API does not say) and
-  `results()`, one reading per image read (empty unless the status is `ok`). A reading is an `AgeReading`
+  `results()`, one entry per picture. A picture the booster did not read (it timed out or failed,
+  or could not decode the picture) is an `UnknownReading` holding only its `image` (and
+  `readable: false`), the status saying why. A reading is an `AgeReading`
   (`image`, `faces`, and `ageYears`, `low`, `high`, `confidence`, each null when `faces` is 0), an
   `AiGeneratedReading` (`image`, `generated`, `confidence`, `method`, `topGenerator` with its
   `name` and `probability`, null unless the image is likely generated, `c2paSigner`, and `c2pa`:
