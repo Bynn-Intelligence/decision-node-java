@@ -46,7 +46,14 @@ final class Responses {
                 Safety.parse(headers.get("x-decisionnode-safety")),
                 warnings(body.get("warnings")),
                 evidence(body.get("evidence")),
+                fallback(headers),
                 body);
+    }
+
+    /** A fallback answer's two headers; null when {@code x-decisionnode-fallback} is absent. */
+    static Fallback fallback(Headers headers) {
+        String served = headers.get("x-decisionnode-fallback");
+        return served == null ? null : new Fallback(served, headers.get("x-decisionnode-requested-model"));
     }
 
     /**
@@ -71,6 +78,7 @@ final class Responses {
                 }
             }
             out.put(booster, new Evidence(str(m.get("version")), str(m.get("status")), Json.asDouble(m.get("latency_ms")),
+                    whole(m.get("billed_calls")),
                     Collections.unmodifiableList(results), Collections.unmodifiableMap(m)));
         }
         return out;

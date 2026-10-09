@@ -8,7 +8,7 @@ import java.util.Map;
 
 /**
  * The arguments of one decision: the state, the questions by id, optional images, optional videos,
- * optional boosters and an optional model. Used by {@link DecisionNode#decide(DecideRequest)} and {@link DecisionNode#decideMany}.
+ * optional boosters, an optional model and the optional fallback setting. Used by {@link DecisionNode#decide(DecideRequest)} and {@link DecisionNode#decideMany}.
  *
  * <pre>{@code
  * DecideRequest req = DecideRequest.builder()
@@ -25,6 +25,7 @@ public final class DecideRequest {
     private final List<Object> videos;
     private final List<Object> boosters;
     private final String model;
+    private final Boolean fallback;
 
     private DecideRequest(Builder b) {
         this.state = b.state;
@@ -33,6 +34,7 @@ public final class DecideRequest {
         this.videos = Collections.unmodifiableList(new ArrayList<>(b.videos));
         this.boosters = Collections.unmodifiableList(new ArrayList<>(b.boosters));
         this.model = b.model;
+        this.fallback = b.fallback;
     }
 
     /** A request with a state and questions (each a {@link Question} or a wire-form map). */
@@ -73,6 +75,11 @@ public final class DecideRequest {
         return model;
     }
 
+    /** Whether the API may answer from Flash when the full model is busy, or null to leave it to the API (true). */
+    public Boolean fallback() {
+        return fallback;
+    }
+
     public static final class Builder {
         private Object state;
         private final Map<String, Object> questions = new LinkedHashMap<>();
@@ -80,6 +87,7 @@ public final class DecideRequest {
         private final List<Object> videos = new ArrayList<>();
         private final List<Object> boosters = new ArrayList<>();
         private String model;
+        private Boolean fallback;
 
         private Builder() {}
 
@@ -159,6 +167,18 @@ public final class DecideRequest {
          */
         public Builder model(String model) {
             this.model = model;
+            return this;
+        }
+
+        /**
+         * Whether the API may answer a {@code decisionnode-1.0} request from
+         * {@code decisionnode-1.0-flash} when no worker of the full model can take it at once
+         * (true, the API's default), or must answer with an {@link OverloadedError} instead
+         * (false). Sent as {@code "fallback"} only when set; null leaves it out. A fallback answer
+         * says so in {@link Decision#fallback()}.
+         */
+        public Builder fallback(Boolean fallback) {
+            this.fallback = fallback;
             return this;
         }
 

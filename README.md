@@ -136,7 +136,8 @@ fields are missing or of the wrong type; the rest of the decision is read as usu
 Numbers are exactly what the API sent: no rounding and no renormalising.
 
 A `Decision` also carries `model()` (the version that answered), `usage()`, `requestId()`,
-`latencyMs()`, `safety()`, `warnings()`, `evidence()` (see Boosters) and `raw()`, the parsed body.
+`latencyMs()`, `safety()`, `warnings()`, `evidence()` (see Boosters), `fallback()` (see Fallback)
+and `raw()`, the parsed body.
 
 ## The client
 
@@ -383,8 +384,9 @@ DecideRequest.builder()
   it, the decision runs without that reading and its evidence says why.
 - `Decision.evidence()` holds one `Evidence` per booster the request named, in its order, and is
   null when the request named none. Each has `version()`, `status()` (`ok`, `timeout`, `error` or
-  `skipped`, when none of the request's images is one it reads), `latencyMs()` and `results()`,
-  one reading per image read (empty unless the status is `ok`). A reading is an `AgeReading`
+  `skipped`, when none of the request's images is one it reads), `latencyMs()`, `billedCalls()`
+  (the calls of that booster billed on this request, null when the API does not say) and
+  `results()`, one reading per image read (empty unless the status is `ok`). A reading is an `AgeReading`
   (`image`, `faces`, and `ageYears`, `low`, `high`, `confidence`, each null when `faces` is 0), an
   `AiGeneratedReading` (`image`, `generated`, `confidence`, `method`, `topGenerator` with its
   `name` and `probability`, null unless the image is likely generated, `c2paSigner`, and `c2pa`:
@@ -426,6 +428,28 @@ Decision d = dn.decide(DecideRequest.builder()
     .build());
 d.model();   // "decisionnode-1.0-flash@acme/fraud:3"
 ```
+
+## Fallback
+
+When no worker of `decisionnode-1.0` can take a request at once, the API answers it from
+`decisionnode-1.0-flash` instead of making it wait. Such an answer says so: `Decision.fallback()`
+holds `servedModel()` (the model that answered) and `requestedModel()` (the model asked for), and
+`model()` is the model that answered. On an ordinary answer `fallback()` is null.
+
+To get the full model or nothing, set `fallback(false)`: the request is then answered by the model
+asked for, or refused with an `OverloadedError` (a 529), which the client retries like any other.
+
+```java
+Decision d = dn.decide(DecideRequest.builder()
+    .state(ticket)
+    .question("escalate", truth("Escalate to a human now?"))
+    .model("decisionnode-1.0")
+    .fallback(false)
+    .build());
+```
+
+`fallback` is sent only when you set it. `decide`, the helpers (their longest form takes
+`fallback` after `boosters`), `decideMany` and batch requests take it; sessions do not.
 
 ## Sessions
 

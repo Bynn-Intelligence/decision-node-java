@@ -56,7 +56,7 @@ import org.junit.jupiter.api.TestFactory;
 @Tag("conformance")
 class ConformanceTest {
     private static final String[] KINDS = {"requests", "responses", "errors", "behaviour", "constants"};
-    private static final Set<String> EXACT = Set.of("probabilities", "legend", "raw", "entries", "safety", "body", "limits", "evidence", "boosters");
+    private static final Set<String> EXACT = Set.of("probabilities", "legend", "raw", "entries", "safety", "body", "limits", "evidence", "boosters", "fallback");
     /** Keys compared whole whose map keys must also come in the expected order. */
     private static final Set<String> ORDERED = Set.of("evidence", "boosters");
     private static final Pattern UPLOAD_ID = Pattern.compile("upl_[0-9a-f]{32}");
@@ -947,6 +947,14 @@ class ConformanceTest {
         usage.put("boosters", d.usage().boosters());
         n.put("usage", usage);
         n.put("evidence", normEvidence(d.evidence()));
+        if (d.fallback() == null) {
+            n.put("fallback", null);
+        } else {
+            Map<String, Object> fb = new LinkedHashMap<>();
+            fb.put("served_model", d.fallback().servedModel());
+            fb.put("requested_model", d.fallback().requestedModel());
+            n.put("fallback", fb);
+        }
         n.put("warnings", d.warnings());
         n.put("safety", normSafety(d.safety()));
         n.put("answers", normAnswers(d.answers()));
@@ -964,6 +972,7 @@ class ConformanceTest {
             n.put("version", ev.version());
             n.put("status", ev.status());
             n.put("latency_ms", ev.latencyMs());
+            n.put("billed_calls", ev.billedCalls());
             List<Object> results = new ArrayList<>();
             for (Reading r : ev.results()) {
                 results.add(normReading(r));
@@ -1268,6 +1277,7 @@ class ConformanceTest {
         String model = (String) args.get("model");
         @SuppressWarnings("unchecked")
         List<Object> boosters = (List<Object>) args.get("boosters");
+        Boolean fallback = (Boolean) args.get("fallback");
         if (Boolean.TRUE.equals(call.get("check"))) {
             // The same request handed to the SDK's check instead of being sent.
             switch (method) {
@@ -1293,8 +1303,8 @@ class ConformanceTest {
             case "check":
                 return async
                         ? join(client.checkAsync(state, args.get("instructions"), args.get("true"), args.get("false"), images, videos, model,
-                                boosters))
-                        : client.check(state, args.get("instructions"), args.get("true"), args.get("false"), images, videos, model, boosters);
+                                boosters, fallback))
+                        : client.check(state, args.get("instructions"), args.get("true"), args.get("false"), images, videos, model, boosters, fallback);
             case "classify": {
                 Object options = args.get("options");
                 if (options instanceof List) {
@@ -1302,25 +1312,25 @@ class ConformanceTest {
                     for (Object o : (List<?>) options) {
                         names.add((String) o);
                     }
-                    return async ? join(client.classifyAsync(state, args.get("instructions"), names, images, videos, model, boosters))
-                            : client.classify(state, args.get("instructions"), names, images, videos, model, boosters);
+                    return async ? join(client.classifyAsync(state, args.get("instructions"), names, images, videos, model, boosters, fallback))
+                            : client.classify(state, args.get("instructions"), names, images, videos, model, boosters, fallback);
                 }
-                return async ? join(client.classifyAsync(state, args.get("instructions"), map(options), images, videos, model, boosters))
-                        : client.classify(state, args.get("instructions"), map(options), images, videos, model, boosters);
+                return async ? join(client.classifyAsync(state, args.get("instructions"), map(options), images, videos, model, boosters, fallback))
+                        : client.classify(state, args.get("instructions"), map(options), images, videos, model, boosters, fallback);
             }
             case "score":
                 return async ? join(client.scoreAsync(state, args.get("instructions"), list(args.get("levels")), images, videos, model,
-                        boosters))
-                        : client.score(state, args.get("instructions"), list(args.get("levels")), images, videos, model, boosters);
+                        boosters, fallback))
+                        : client.score(state, args.get("instructions"), list(args.get("levels")), images, videos, model, boosters, fallback);
             case "number":
                 return async
                         ? join(client.numberAsync(state, args.get("instructions"), (Number) args.get("min"), (Number) args.get("max"),
-                                (Number) args.get("step"), images, videos, model, boosters))
+                                (Number) args.get("step"), images, videos, model, boosters, fallback))
                         : client.number(state, args.get("instructions"), (Number) args.get("min"), (Number) args.get("max"),
-                                (Number) args.get("step"), images, videos, model, boosters);
+                                (Number) args.get("step"), images, videos, model, boosters, fallback);
             case "gate":
-                return async ? join(client.gateAsync(args.get("action"), args.get("context"), images, videos, model, boosters))
-                        : client.gate(args.get("action"), args.get("context"), images, videos, model, boosters);
+                return async ? join(client.gateAsync(args.get("action"), args.get("context"), images, videos, model, boosters, fallback))
+                        : client.gate(args.get("action"), args.get("context"), images, videos, model, boosters, fallback);
             case "models":
                 return async ? join(client.modelsAsync()) : client.models();
             case "upload": {
@@ -1472,6 +1482,7 @@ class ConformanceTest {
                 b.boosters(list(r.get("boosters")));
             }
             b.model((String) r.get("model"));
+            b.fallback((Boolean) r.get("fallback"));
             out.add(b.build());
         }
         return out;
@@ -1498,6 +1509,7 @@ class ConformanceTest {
         if (args.get("model") != null) {
             b.model((String) args.get("model"));
         }
+        b.fallback((Boolean) args.get("fallback"));
         return b.build();
     }
 

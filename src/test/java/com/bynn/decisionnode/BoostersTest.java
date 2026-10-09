@@ -188,7 +188,7 @@ class BoostersTest {
     void evidenceIsReadByBoosterInOrder() throws IOException {
         Decision d = decision("{\"model\":\"decisionnode-1.0\",\"answers\":{\"adult\":{\"type\":\"truth\",\"truth\":0.97}},"
                 + "\"evidence\":{"
-                + "\"age\":{\"version\":\"age-v3\",\"status\":\"ok\",\"latency_ms\":212,\"results\":["
+                + "\"age\":{\"version\":\"age-v3\",\"status\":\"ok\",\"latency_ms\":212,\"billed_calls\":2,\"results\":["
                 + "{\"image\":\"a1b2\",\"age_years\":27,\"low\":22,\"high\":33,\"confidence\":0.81,\"faces\":1},"
                 + "{\"image\":\"c3d4\",\"faces\":0}]},"
                 + "\"ai_generated\":{\"version\":\"ai_generated-v2\",\"status\":\"ok\",\"latency_ms\":340,\"results\":["
@@ -205,6 +205,8 @@ class BoostersTest {
         assertEquals("ok", age.status());
         assertTrue(age.ok());
         assertEquals(212.0, age.latencyMs());
+        assertEquals(2L, age.billedCalls());
+        assertNull(d.evidence("ai_generated").billedCalls());
         AgeReading a = assertInstanceOf(AgeReading.class, age.results().get(0));
         assertEquals("a1b2", a.image());
         assertEquals(1, a.faces());

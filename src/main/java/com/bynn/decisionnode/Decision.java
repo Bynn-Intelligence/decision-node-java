@@ -24,10 +24,11 @@ public final class Decision {
     private final Safety safety;
     private final List<String> warnings;
     private final Map<String, Evidence> evidence;
+    private final Fallback fallback;
     private final Map<String, Object> raw;
 
     Decision(Map<String, Answer> answers, String model, Usage usage, String requestId, Double latencyMs, Safety safety,
-            List<String> warnings, Map<String, Evidence> evidence, Map<String, Object> raw) {
+            List<String> warnings, Map<String, Evidence> evidence, Fallback fallback, Map<String, Object> raw) {
         this.answers = Collections.unmodifiableMap(new LinkedHashMap<>(answers));
         this.model = model;
         this.usage = usage;
@@ -36,6 +37,7 @@ public final class Decision {
         this.safety = safety;
         this.warnings = warnings;
         this.evidence = evidence == null ? null : Collections.unmodifiableMap(new LinkedHashMap<>(evidence));
+        this.fallback = fallback;
         this.raw = raw;
     }
 
@@ -101,6 +103,17 @@ public final class Decision {
      */
     public Map<String, Evidence> evidence() {
         return evidence;
+    }
+
+    /**
+     * Null on an ordinary answer. On a fallback answer (the API answered a request for the full
+     * model from Flash, because no worker of the full model could take it at once), the model
+     * that answered and the one asked for, from the {@code x-decisionnode-fallback} and
+     * {@code x-decisionnode-requested-model} headers. {@link #model()} stays the model that
+     * answered.
+     */
+    public Fallback fallback() {
+        return fallback;
     }
 
     /** What the booster of this name read; null when the response carries no evidence from it. */

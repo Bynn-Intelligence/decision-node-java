@@ -21,7 +21,13 @@ Implements version 1.3 of the DecisionNode SDK specification: boosters and fine-
   null when the request named none, with the readings `AgeReading`, `AiGeneratedReading` (and its
   `TopGenerator`) and, for a booster this SDK does not know or a malformed reading,
   `UnknownReading`. `Reading` is a sealed interface.
+- `Evidence.billedCalls()`: the calls of that booster billed on the request, null when absent.
 - `Usage.boosterTokens()` and `Usage.boosters()`, null for a request without boosters.
+- The `fallback` option on `DecideRequest`, `BatchRequest` and the longest form of every helper
+  (after `boosters`), sync and async: `fallback(false)` asks the API not to answer from Flash when
+  the full model is busy. Sent only when set. `Decision.fallback()` is the new `Fallback`
+  (`servedModel`, `requestedModel`) of a fallback answer, from the `x-decisionnode-fallback` and
+  `x-decisionnode-requested-model` headers, and null otherwise.
 - `DecisionNodeError.boosters()`: each booster's `BoosterStatus` from the `x-decisionnode-boosters`
   header, empty when the header is absent.
 - Fine-tuned models: `ModelInfo.fineTuned()`, `base()`, `adapterVersion()` and `status()`, null on

@@ -28,6 +28,7 @@ public final class BatchRequest {
     private final List<Object> videos;
     private final List<Object> boosters;
     private final String model;
+    private final Boolean fallback;
 
     private BatchRequest(Builder b) {
         this.customId = b.customId;
@@ -37,6 +38,7 @@ public final class BatchRequest {
         this.videos = Collections.unmodifiableList(new ArrayList<>(b.videos));
         this.boosters = Collections.unmodifiableList(new ArrayList<>(b.boosters));
         this.model = b.model;
+        this.fallback = b.fallback;
     }
 
     /**
@@ -51,7 +53,7 @@ public final class BatchRequest {
     /** A decision request under this {@code custom_id}. */
     public static BatchRequest of(String customId, DecideRequest request) {
         return builder(customId).state(request.state()).questions(request.questions()).images(request.images())
-                .videos(request.videos()).boosters(request.boosters()).model(request.model()).build();
+                .videos(request.videos()).boosters(request.boosters()).model(request.model()).fallback(request.fallback()).build();
     }
 
     public String customId() {
@@ -84,6 +86,11 @@ public final class BatchRequest {
         return model;
     }
 
+    /** The line's fallback setting, or null to leave it to the API (true). */
+    public Boolean fallback() {
+        return fallback;
+    }
+
     public static final class Builder {
         private final String customId;
         private Object state;
@@ -92,6 +99,7 @@ public final class BatchRequest {
         private final List<Object> videos = new ArrayList<>();
         private final List<Object> boosters = new ArrayList<>();
         private String model;
+        private Boolean fallback;
 
         private Builder(String customId) {
             this.customId = customId;
@@ -162,6 +170,12 @@ public final class BatchRequest {
         /** The model for this request; null or empty for the client's. */
         public Builder model(String model) {
             this.model = model;
+            return this;
+        }
+
+        /** As {@link DecideRequest.Builder#fallback(Boolean)}: sent only when set. */
+        public Builder fallback(Boolean fallback) {
+            this.fallback = fallback;
             return this;
         }
 

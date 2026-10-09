@@ -302,6 +302,9 @@ public final class Batches {
             if (!r.boosters().isEmpty()) {
                 head.put("boosters", Booster.wires(r.boosters()));
             }
+            if (r.fallback() != null) {
+                head.put("fallback", r.fallback());
+            }
             Map<String, Object> limits = client.limits((String) head.get("model"));
             Map<String, Object> probe = new LinkedHashMap<>(head);
             probe.remove("custom_id");
