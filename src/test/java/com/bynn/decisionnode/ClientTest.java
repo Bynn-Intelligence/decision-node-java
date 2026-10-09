@@ -246,7 +246,7 @@ class ClientTest {
 
     @Test
     void specVersion() {
-        assertEquals("1.2", DecisionNode.SPEC_VERSION);
+        assertEquals("1.3", DecisionNode.SPEC_VERSION);
         assertEquals(524_288, DecisionNode.DEFAULT_INLINE_THRESHOLD);
     }
 

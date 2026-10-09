@@ -3,10 +3,10 @@
 The official Java and Kotlin client for the [DecisionNode](https://decisionnode.com) API: ask
 typed questions about any state and get probabilities back.
 
-Java 17 or later. Works from Kotlin as is. Implements version 1.2 of the DecisionNode SDK
+Java 17 or later. Works from Kotlin as is. Implements version 1.3 of the DecisionNode SDK
 specification, which `DecisionNode.SPEC_VERSION` holds: decisions with `truth`, `choice`, `score`,
-`number`, `point` and `box` questions, up to 16 images and videos sent as frames, the models list,
-image uploads, sessions and the Batch API.
+`number`, `point` and `box` questions, up to 16 images and videos sent as frames, boosters and
+their evidence, fine-tuned models, the models list, image uploads, sessions and the Batch API.
 
 ## Install
 
@@ -14,7 +14,7 @@ Gradle:
 
 ```kotlin
 dependencies {
-    implementation("com.bynn:decisionnode:0.2.0")
+    implementation("com.bynn:decisionnode:0.3.0")
 }
 ```
 
@@ -24,7 +24,7 @@ Maven:
 <dependency>
   <groupId>com.bynn</groupId>
   <artifactId>decisionnode</artifactId>
-  <version>0.2.0</version>
+  <version>0.3.0</version>
 </dependency>
 ```
 
@@ -136,13 +136,13 @@ fields are missing or of the wrong type; the rest of the decision is read as usu
 Numbers are exactly what the API sent: no rounding and no renormalising.
 
 A `Decision` also carries `model()` (the version that answered), `usage()`, `requestId()`,
-`latencyMs()`, `safety()`, `warnings()` and `raw()`, the parsed body.
+`latencyMs()`, `safety()`, `warnings()`, `evidence()` (see Boosters) and `raw()`, the parsed body.
 
 ## The client
 
 | Method | Does |
 |---|---|
-| `decide(state, questions)`, `decide(state, questions, images, model)`, `decide(state, questions, images, videos, model)`, `decide(DecideRequest)` | One decision |
+| `decide(state, questions)`, `decide(state, questions, images, model)`, `decide(state, questions, images, videos, model[, boosters])`, `decide(DecideRequest)` | One decision |
 | `decideMany(requests)`, `decideMany(requests, concurrency)` | Many decisions, at most `concurrency` (default 8) at a time. One `DecisionResult` per request, in input order; one failure does not stop the others. Every request is checked first: a `concurrency` below 1 or an invalid request (an empty question map, a value that cannot be serialised) throws `IllegalArgumentException` and nothing is sent, not even the valid requests. |
 | `check(state, instructions)`, `check(state, instructions, ifTrue, ifFalse)`, `check(state, instructions, ifTrue, ifFalse, images[, videos], model)` | One `truth` question; returns the `TruthAnswer` (see below for a malformed answer) |
 | `classify(state, instructions, options)`, `classify(state, instructions, options, images[, videos], model)` | One `choice` question; returns the `ChoiceAnswer` |
@@ -163,7 +163,8 @@ f.thenAccept(a -> System.out.println(a.truth()));
 ```
 
 In the helpers, as in `decide`, `images` and `videos` may be null and a null or empty `model`
-means the client's.
+means the client's. Each helper's longest form also takes `boosters` last (see Boosters), for
+example `check(state, instructions, ifTrue, ifFalse, images, videos, model, boosters)`.
 
 `check`, `classify`, `score` and `number` promise a typed answer. When their own answer is missing or
 malformed, they throw `ServerError` with `status()` 200, the `requestId()` and `reason()` from
@@ -313,6 +314,97 @@ frames read) and `videoSeconds()` (the seconds of the windows read), both null f
 without videos, and `Decision.warnings()` the server's notes exactly as sent (empty when there are
 none). To turn a video file into frames, use the `dn` command line tool: `dn --video dock.mp4`.
 
+## Boosters
+
+A booster is a specialist model that reads the request's images before the decision. Its reading
+is added to what the model sees as evidence and comes back in the response. The model still
+answers every question: a booster never answers one, and a request without boosters is answered
+exactly as before. Two boosters are available:
+
+| Booster | Reads | Tells the model |
+|---|---|---|
+| `age` | A picture of a person | How old the person is, with a range and a confidence (the largest face is read) |
+| `ai_generated` | Any picture | How likely the picture was made by an image generator, which generator most likely, and whether the file carries Content Credentials (C2PA) and who signed them |
+
+```java
+Decision d = dn.decide(DecideRequest.builder()
+    .image(Image.fromUpload("selfie", "upl_..."))
+    .image(Image.fromUrl("upload", "https://files.example.com/upload.jpg"))
+    .booster("age")                                                        // reads every image
+    .booster(Booster.of("ai_generated").images("upload").require(true))   // one image, required
+    .question("adult", truth("Is the person in `selfie` an adult?"))
+    .question("synthetic", truth("Is `upload` AI-generated?"))
+    .build());
+
+d.truth("adult").truth();                                // 0.97
+Evidence age = d.evidence("age");
+age.status();                                            // "ok"
+for (Reading r : age.results()) {
+    if (r instanceof AgeReading a && a.faces() > 0) {
+        System.out.println(a.image() + " " + a.ageYears() + " (" + a.low() + " to " + a.high() + ")");
+    }
+}
+AiGeneratedReading g = (AiGeneratedReading) d.evidence("ai_generated").results().get(0);
+g.generated();                                           // 0.93
+g.method();                                              // "inference", or "c2pa" from Content Credentials
+g.c2paSigner();                                          // who signed them, or null
+d.usage().boosterTokens();                               // the readings' share of the input tokens
+d.usage().boosters();                                    // booster calls billed
+```
+
+- `booster(name)` names a booster that reads every image of the request; `Booster.of(name)` adds
+  settings: `images(ids...)` (the images it reads), `require(true)` and `options(map)`. A booster
+  in its wire form, a map, is accepted too. A request takes up to 4 boosters, each at most once,
+  in the order given. `decide`, the helpers, `decideMany` and batch requests take boosters;
+  sessions do not.
+- `require(true)`: a booster that fails or does not answer in time fails the request with
+  `OverloadedError`, `errorType()` `booster_unavailable`, which is retried like any 529. Without
+  it, the decision runs without that reading and its evidence says why.
+- `Decision.evidence()` holds one `Evidence` per booster the request named, in its order, and is
+  null when the request named none. Each has `version()`, `status()` (`ok`, `timeout`, `error` or
+  `skipped`, when none of the request's images is one it reads), `latencyMs()` and `results()`,
+  one reading per image read (empty unless the status is `ok`). A reading is an `AgeReading`
+  (`image`, `faces`, and `ageYears`, `low`, `high`, `confidence`, each null when `faces` is 0), an
+  `AiGeneratedReading` (`image`, `generated`, `confidence`, `method`, `topGenerator` with its
+  `name` and `probability`, `c2paSigner`), or an `UnknownReading` with its fields in `raw()` for a
+  booster newer than this SDK. `Reading` is a sealed interface, so a `switch` or Kotlin `when` over
+  it is exhaustive.
+- `usage().boosterTokens()` is the readings' share of the input tokens, and `usage().boosters()`
+  the booster calls billed; both are null for a request without boosters.
+- Price: USD 0.002 per booster call billed, one per booster and image read with status `ok`, drawn
+  from the prepaid balance with the request's tokens. A booster that timed out or failed is free,
+  and so is a refused request's. The readings' tokens are input tokens at the model's price.
+- The API checks the list before any booster runs and before any charge: a name that is not a
+  booster is a `BadRequestError` (`booster_unknown`), a booster that needs images on a request
+  without any, or an image id that is not the request's, too (`booster_input_mismatch`), a booster
+  turned off for the workspace a `PermissionDeniedError` (`booster_not_enabled`), and a malformed
+  list (more than 4, a name twice, a key in `options`) a `BadRequestError` (`api_usage_error`). Every
+  error of a request that named boosters carries `boosters()`: each booster's `status()` and
+  `latencyMs()` by name, from the `x-decisionnode-boosters` header, so you can see which required
+  booster failed.
+
+## Fine-tuned models
+
+A model your workspace fine-tuned in the console is called by its name in `model`, by the keys of
+that workspace: `decisionnode-1.0-flash@acme/fraud` runs the version deployed most recently, and
+`decisionnode-1.0-flash@acme/fraud:3` pins version 3. It answers like its base: the same question
+types, answers, limits and errors. The answer's `model()` is always the pinned name, so you can log
+which version answered. A name that does not exist, is not deployed or belongs to another
+workspace is the API's `BadRequestError` "Unknown model: <name>"; the SDK sends the name as given.
+`models()` lists the workspace's fine-tuned models beside the catalogue, each `ModelInfo` with
+`fineTuned()` true, `base()` (the base's pinned id), `adapterVersion()` (the version number) and
+`status()` (`deployed` answers decisions, `ready` is trained but not deployed); a catalogue entry
+has them null.
+
+```java
+Decision d = dn.decide(DecideRequest.builder()
+    .state(claim)
+    .question("fraud", truth("Is this claim fraudulent?"))
+    .model("decisionnode-1.0-flash@acme/fraud")
+    .build());
+d.model();   // "decisionnode-1.0-flash@acme/fraud:3"
+```
+
 ## Sessions
 
 A session answers the same questions about a stream of frames over one WebSocket (the JDK's
@@ -434,8 +526,9 @@ Every error the API or the network causes is an unchecked `DecisionNodeError`, t
 base class of every error below, so `catch (DecisionNodeError e)` catches them all. `getMessage()`
 is the server's message (`detail.message`, or `detail` when it is a string; `""`, never null,
 when the response carried none), or the client's own description when no response arrived. The error also has `status()`,
-`errorType()`, `requestId()` and `reason()`, the server's explanation in words from the
-`x-decisionnode-error` header.
+`errorType()`, `requestId()`, `reason()`, the server's explanation in words from the
+`x-decisionnode-error` header, and `boosters()`, each booster's status and time for a request
+that named boosters (empty otherwise).
 
 Only a 2xx response is a success. A 2xx whose body is not JSON is a `ServerError`.
 
@@ -445,7 +538,7 @@ Only a 2xx response is a success. A 2xx whose body is not JSON is a `ServerError
 | 401, or no key | `AuthenticationError` | |
 | 402 | `InsufficientCreditError` | |
 | 403 refusal | `RefusalError` | `category()` (`harm` or `self_harm`), `safety()` |
-| 403 other | `PermissionDeniedError` | |
+| 403 other (a booster turned off, a suspended workspace) | `PermissionDeniedError` | |
 | 404 | `NotFoundError` | |
 | 422 | `ValidationError` | `entries()` |
 | 429 | `RateLimitError`; `SessionLimitError` (a subclass) for `session_limit_exceeded` | `retryAfter()` in seconds |
@@ -577,6 +670,7 @@ model)`, the helpers' `model` argument or `DecideRequest.builder().model(...)`.
 | `decisionnode-latest` | The latest model (default) |
 | `decisionnode-flash-latest` | The latest fast, lower-cost model |
 | `decisionnode-1.0`, `decisionnode-1.0-flash` | Pinned versions |
+| `decisionnode-1.0-flash@acme/fraud`, `...:3` | Your workspace's fine-tuned models (see Fine-tuned models) |
 
 ### Your own HttpClient
 
@@ -614,7 +708,7 @@ The conformance suite is the language-neutral set of cases every DecisionNode SD
 needs Python 3.10 or later for its mock server. Every case runs twice, through the blocking
 methods and through the `...Async` methods. Without `DECISIONNODE_CONFORMANCE_DIR` the
 conformance task fails rather than skipping. The suite's mock serves uploads, sessions (a
-WebSocket) and batches as well; this SDK passes every case of suite 1.10 in both forms. CI checks the suite out at a pinned commit, set
+WebSocket) and batches as well; this SDK passes every case of suite 1.11 in both forms. CI checks the suite out at a pinned commit, set
 once as `CONFORMANCE_REF` in `.github/workflows/ci.yml`; every action there is pinned to a
 commit SHA and no checkout keeps its credentials.
 

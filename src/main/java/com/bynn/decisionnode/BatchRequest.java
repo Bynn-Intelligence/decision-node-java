@@ -17,7 +17,8 @@ import java.util.Map;
  * }</pre>
  *
  * <p>Its local images follow the client's inline threshold, counted per request; uploaded ones
- * are held by the batch until it runs. Its videos go inline, as on a decision.
+ * are held by the batch until it runs. Its videos go inline, as on a decision, and its boosters
+ * are sent as a live request's are.
  */
 public final class BatchRequest {
     private final String customId;
@@ -25,6 +26,7 @@ public final class BatchRequest {
     private final Map<String, Object> questions;
     private final List<Object> images;
     private final List<Object> videos;
+    private final List<Object> boosters;
     private final String model;
 
     private BatchRequest(Builder b) {
@@ -33,6 +35,7 @@ public final class BatchRequest {
         this.questions = Collections.unmodifiableMap(new LinkedHashMap<>(b.questions));
         this.images = Collections.unmodifiableList(new ArrayList<>(b.images));
         this.videos = Collections.unmodifiableList(new ArrayList<>(b.videos));
+        this.boosters = Collections.unmodifiableList(new ArrayList<>(b.boosters));
         this.model = b.model;
     }
 
@@ -48,7 +51,7 @@ public final class BatchRequest {
     /** A decision request under this {@code custom_id}. */
     public static BatchRequest of(String customId, DecideRequest request) {
         return builder(customId).state(request.state()).questions(request.questions()).images(request.images())
-                .videos(request.videos()).model(request.model()).build();
+                .videos(request.videos()).boosters(request.boosters()).model(request.model()).build();
     }
 
     public String customId() {
@@ -72,6 +75,11 @@ public final class BatchRequest {
         return videos;
     }
 
+    /** {@link Booster}s, booster names or wire-form maps, in the order given. */
+    public List<Object> boosters() {
+        return boosters;
+    }
+
     public String model() {
         return model;
     }
@@ -82,6 +90,7 @@ public final class BatchRequest {
         private final Map<String, Object> questions = new LinkedHashMap<>();
         private final List<Object> images = new ArrayList<>();
         private final List<Object> videos = new ArrayList<>();
+        private final List<Object> boosters = new ArrayList<>();
         private String model;
 
         private Builder(String customId) {
@@ -126,6 +135,26 @@ public final class BatchRequest {
         public Builder videos(List<?> videos) {
             if (videos != null) {
                 this.videos.addAll(videos);
+            }
+            return this;
+        }
+
+        /** Adds a booster by name: it reads every image of the request. */
+        public Builder booster(String name) {
+            boosters.add(name);
+            return this;
+        }
+
+        /** Adds a booster with its settings. */
+        public Builder booster(Booster booster) {
+            boosters.add(booster);
+            return this;
+        }
+
+        /** Adds boosters: {@link Booster}s, names or wire-form maps, sent in this order. */
+        public Builder boosters(List<?> boosters) {
+            if (boosters != null) {
+                this.boosters.addAll(boosters);
             }
             return this;
         }

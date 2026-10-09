@@ -4,6 +4,32 @@ All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project uses
 [Semantic Versioning](https://semver.org/).
 
+## [0.3.0] - Unreleased
+
+Implements version 1.3 of the DecisionNode SDK specification: boosters and fine-tuned models.
+
+### Added
+
+- Boosters: `DecideRequest.Builder.booster(name)`, `booster(Booster)` and `boosters(list)`, with
+  `Booster.of(name)` and its `images`, `require` and `options` settings (a name or a wire-form map
+  is accepted too), on `BatchRequest`, `decideMany`, and as a `boosters` argument of `decide`,
+  `check`, `classify`, `score`, `number` and `gate` and their async forms. The list is sent in the
+  order given and left out of the body when empty; the API checks it.
+- `Decision.evidence()`: one `Evidence` per booster (`version`, `status`, `latencyMs`, `results`),
+  null when the request named none, with the readings `AgeReading`, `AiGeneratedReading` (and its
+  `TopGenerator`) and, for a booster this SDK does not know or a malformed reading,
+  `UnknownReading`. `Reading` is a sealed interface.
+- `Usage.boosterTokens()` and `Usage.boosters()`, null for a request without boosters.
+- `DecisionNodeError.boosters()`: each booster's `BoosterStatus` from the `x-decisionnode-boosters`
+  header, empty when the header is absent.
+- Fine-tuned models: `ModelInfo.fineTuned()`, `base()`, `adapterVersion()` and `status()`, null on
+  a catalogue entry. A fine-tuned model's name is sent as given in `model`.
+
+### Changed
+
+- `SPEC_VERSION` is `"1.3"`.
+- The 128-level nesting check counts the `boosters` list and its `options`.
+
 ## [0.2.0] - Unreleased
 
 Implements version 1.2 of the DecisionNode SDK specification: sixteen images, videos as frames,

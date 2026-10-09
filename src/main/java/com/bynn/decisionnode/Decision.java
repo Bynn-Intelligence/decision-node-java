@@ -23,10 +23,11 @@ public final class Decision {
     private final Double latencyMs;
     private final Safety safety;
     private final List<String> warnings;
+    private final Map<String, Evidence> evidence;
     private final Map<String, Object> raw;
 
     Decision(Map<String, Answer> answers, String model, Usage usage, String requestId, Double latencyMs, Safety safety,
-            List<String> warnings, Map<String, Object> raw) {
+            List<String> warnings, Map<String, Evidence> evidence, Map<String, Object> raw) {
         this.answers = Collections.unmodifiableMap(new LinkedHashMap<>(answers));
         this.model = model;
         this.usage = usage;
@@ -34,6 +35,7 @@ public final class Decision {
         this.latencyMs = latencyMs;
         this.safety = safety;
         this.warnings = warnings;
+        this.evidence = evidence == null ? null : Collections.unmodifiableMap(new LinkedHashMap<>(evidence));
         this.raw = raw;
     }
 
@@ -93,7 +95,23 @@ public final class Decision {
         return type.cast(a);
     }
 
-    /** The model version that answered, for example {@code decisionnode-1.0}. */
+    /**
+     * What each booster the request named read, by booster name in the request's order; null when
+     * the request named none (and on a refused request).
+     */
+    public Map<String, Evidence> evidence() {
+        return evidence;
+    }
+
+    /** What the booster of this name read; null when the response carries no evidence from it. */
+    public Evidence evidence(String booster) {
+        return evidence == null ? null : evidence.get(booster);
+    }
+
+    /**
+     * The model version that answered, for example {@code decisionnode-1.0}; for a fine-tuned model
+     * its pinned name, for example {@code decisionnode-1.0-flash@acme/fraud:3}.
+     */
     public String model() {
         return model;
     }

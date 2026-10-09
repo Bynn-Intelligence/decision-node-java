@@ -87,6 +87,16 @@ public class DecisionNodeError extends RuntimeException {
         return headers;
     }
 
+    /**
+     * For a request that named boosters: each booster's status and time, by name in the request's
+     * order, from the {@code x-decisionnode-boosters} response header, so a caller can see which
+     * required booster failed. Empty when the header is absent or no response was received.
+     */
+    public Map<String, BoosterStatus> boosters() {
+        List<String> values = headers.get("x-decisionnode-boosters");
+        return Responses.boosters(values == null || values.isEmpty() ? null : String.join(",", values));
+    }
+
     @Override
     public String toString() {
         String name = getClass().getName();

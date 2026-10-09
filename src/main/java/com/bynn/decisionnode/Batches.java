@@ -299,6 +299,9 @@ public final class Batches {
             head.put("model", m != null && !m.isEmpty() ? m : client.model());
             head.put("state", r.state() == null ? "" : r.state());
             head.put("questions", r.questions());
+            if (!r.boosters().isEmpty()) {
+                head.put("boosters", Booster.wires(r.boosters()));
+            }
             Map<String, Object> limits = client.limits((String) head.get("model"));
             Map<String, Object> probe = new LinkedHashMap<>(head);
             probe.remove("custom_id");

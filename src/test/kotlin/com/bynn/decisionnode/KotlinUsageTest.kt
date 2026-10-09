@@ -90,6 +90,29 @@ class KotlinUsageTest {
     }
 
     @Test
+    fun boostersAndEvidenceReadNaturallyFromKotlin() {
+        val dn = DecisionNode.builder().apiKey("dn_test").baseUrl(url).timeout(Duration.ofSeconds(5)).build()
+
+        val d = dn.decide(
+            DecideRequest.builder()
+                .image(Image.fromUrl("selfie", "https://files.example.com/selfie.jpg"))
+                .booster("age")
+                .booster(Booster.of("ai_generated").images("selfie").require(true))
+                .question("escalate", truth("Is the person in `selfie` an adult?"))
+                .build(),
+        )
+        assertEquals(0.94, d.truth("escalate").truth())
+
+        val reading: Reading = AgeReading("selfie", 1, 27, 22, 33, 0.81, emptyMap())
+        val text = when (reading) {
+            is AgeReading -> "age ${reading.ageYears()}"
+            is AiGeneratedReading -> "generated ${reading.generated()}"
+            is UnknownReading -> "unknown ${reading.booster()}"
+        }
+        assertEquals("age 27", text)
+    }
+
+    @Test
     fun errorsAreKotlinExceptions() {
         val dn = DecisionNode.builder().apiKey("").baseUrl(url).build()
         val e = assertThrows<DecisionNodeError> { dn.check("s", "?") }

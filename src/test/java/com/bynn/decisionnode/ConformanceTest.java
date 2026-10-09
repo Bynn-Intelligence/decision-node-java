@@ -56,7 +56,9 @@ import org.junit.jupiter.api.TestFactory;
 @Tag("conformance")
 class ConformanceTest {
     private static final String[] KINDS = {"requests", "responses", "errors", "behaviour", "constants"};
-    private static final Set<String> EXACT = Set.of("probabilities", "legend", "raw", "entries", "safety", "body", "limits");
+    private static final Set<String> EXACT = Set.of("probabilities", "legend", "raw", "entries", "safety", "body", "limits", "evidence", "boosters");
+    /** Keys compared whole whose map keys must also come in the expected order. */
+    private static final Set<String> ORDERED = Set.of("evidence", "boosters");
     private static final Pattern UPLOAD_ID = Pattern.compile("upl_[0-9a-f]{32}");
 
     private static Path root;
@@ -173,6 +175,7 @@ class ConformanceTest {
             match(exp.get("answer"), normAnswer((Answer) result), "answer");
         } else if (exp.containsKey("models")) {
             List<Object> got = new ArrayList<>();
+            List<Object> expected = list(exp.get("models"));
             for (Object o : (List<?>) result) {
                 ModelInfo m = (ModelInfo) o;
                 Map<String, Object> n = new LinkedHashMap<>();
@@ -180,6 +183,14 @@ class ConformanceTest {
                 n.put("description", m.description());
                 n.put("release_date", m.releaseDate());
                 n.put("limits", m.limits());
+                // A fine-tuned model's fields, compared when the case lists them.
+                int i = got.size();
+                if (i < expected.size() && mapOrEmpty(expected.get(i)).containsKey("fine_tuned")) {
+                    n.put("fine_tuned", m.fineTuned());
+                    n.put("base", m.base());
+                    n.put("adapter_version", m.adapterVersion());
+                    n.put("status", m.status());
+                }
                 got.add(n);
             }
             if (!same(exp.get("models"), got)) {
@@ -932,11 +943,66 @@ class ConformanceTest {
         usage.put("output_tokens", d.usage().outputTokens());
         usage.put("video_frames", d.usage().videoFrames());
         usage.put("video_seconds", d.usage().videoSeconds());
+        usage.put("booster_tokens", d.usage().boosterTokens());
+        usage.put("boosters", d.usage().boosters());
         n.put("usage", usage);
+        n.put("evidence", normEvidence(d.evidence()));
         n.put("warnings", d.warnings());
         n.put("safety", normSafety(d.safety()));
         n.put("answers", normAnswers(d.answers()));
         n.put("raw", d.raw());
+        return n;
+    }
+
+    static Map<String, Object> normEvidence(Map<String, Evidence> evidence) {
+        if (evidence == null) {
+            return null;
+        }
+        Map<String, Object> out = new LinkedHashMap<>();
+        evidence.forEach((name, ev) -> {
+            Map<String, Object> n = new LinkedHashMap<>();
+            n.put("version", ev.version());
+            n.put("status", ev.status());
+            n.put("latency_ms", ev.latencyMs());
+            List<Object> results = new ArrayList<>();
+            for (Reading r : ev.results()) {
+                results.add(normReading(r));
+            }
+            n.put("results", results);
+            out.put(name, n);
+        });
+        return out;
+    }
+
+    static Map<String, Object> normReading(Reading r) {
+        Map<String, Object> n = new LinkedHashMap<>();
+        if (r instanceof AgeReading a) {
+            n.put("kind", "age");
+            n.put("image", a.image());
+            n.put("faces", a.faces());
+            n.put("age_years", a.ageYears());
+            n.put("low", a.low());
+            n.put("high", a.high());
+            n.put("confidence", a.confidence());
+        } else if (r instanceof AiGeneratedReading g) {
+            n.put("kind", "ai_generated");
+            n.put("image", g.image());
+            n.put("generated", g.generated());
+            n.put("confidence", g.confidence());
+            n.put("method", g.method());
+            if (g.topGenerator() == null) {
+                n.put("top_generator", null);
+            } else {
+                Map<String, Object> top = new LinkedHashMap<>();
+                top.put("name", g.topGenerator().name());
+                top.put("probability", g.topGenerator().probability());
+                n.put("top_generator", top);
+            }
+            n.put("c2pa_signer", g.c2paSigner());
+        } else {
+            n.put("kind", "unknown");
+            n.put("raw", r.raw());
+        }
         return n;
     }
 
@@ -1083,6 +1149,14 @@ class ConformanceTest {
             retry = o.retryAfter();
         }
         n.put("retry_after", retry);
+        Map<String, Object> boosters = new LinkedHashMap<>();
+        e.boosters().forEach((name, st) -> {
+            Map<String, Object> b = new LinkedHashMap<>();
+            b.put("status", st.status());
+            b.put("latency_ms", st.latencyMs());
+            boosters.put(name, b);
+        });
+        n.put("boosters", boosters);
         return n;
     }
 
@@ -1191,6 +1265,8 @@ class ConformanceTest {
         @SuppressWarnings("unchecked")
         List<Object> videos = (List<Object>) args.get("videos");
         String model = (String) args.get("model");
+        @SuppressWarnings("unchecked")
+        List<Object> boosters = (List<Object>) args.get("boosters");
         if (Boolean.TRUE.equals(call.get("check"))) {
             // The same request handed to the SDK's check instead of being sent.
             switch (method) {
@@ -1215,8 +1291,9 @@ class ConformanceTest {
             }
             case "check":
                 return async
-                        ? join(client.checkAsync(state, args.get("instructions"), args.get("true"), args.get("false"), images, videos, model))
-                        : client.check(state, args.get("instructions"), args.get("true"), args.get("false"), images, videos, model);
+                        ? join(client.checkAsync(state, args.get("instructions"), args.get("true"), args.get("false"), images, videos, model,
+                                boosters))
+                        : client.check(state, args.get("instructions"), args.get("true"), args.get("false"), images, videos, model, boosters);
             case "classify": {
                 Object options = args.get("options");
                 if (options instanceof List) {
@@ -1224,24 +1301,25 @@ class ConformanceTest {
                     for (Object o : (List<?>) options) {
                         names.add((String) o);
                     }
-                    return async ? join(client.classifyAsync(state, args.get("instructions"), names, images, videos, model))
-                            : client.classify(state, args.get("instructions"), names, images, videos, model);
+                    return async ? join(client.classifyAsync(state, args.get("instructions"), names, images, videos, model, boosters))
+                            : client.classify(state, args.get("instructions"), names, images, videos, model, boosters);
                 }
-                return async ? join(client.classifyAsync(state, args.get("instructions"), map(options), images, videos, model))
-                        : client.classify(state, args.get("instructions"), map(options), images, videos, model);
+                return async ? join(client.classifyAsync(state, args.get("instructions"), map(options), images, videos, model, boosters))
+                        : client.classify(state, args.get("instructions"), map(options), images, videos, model, boosters);
             }
             case "score":
-                return async ? join(client.scoreAsync(state, args.get("instructions"), list(args.get("levels")), images, videos, model))
-                        : client.score(state, args.get("instructions"), list(args.get("levels")), images, videos, model);
+                return async ? join(client.scoreAsync(state, args.get("instructions"), list(args.get("levels")), images, videos, model,
+                        boosters))
+                        : client.score(state, args.get("instructions"), list(args.get("levels")), images, videos, model, boosters);
             case "number":
                 return async
                         ? join(client.numberAsync(state, args.get("instructions"), (Number) args.get("min"), (Number) args.get("max"),
-                                (Number) args.get("step"), images, videos, model))
+                                (Number) args.get("step"), images, videos, model, boosters))
                         : client.number(state, args.get("instructions"), (Number) args.get("min"), (Number) args.get("max"),
-                                (Number) args.get("step"), images, videos, model);
+                                (Number) args.get("step"), images, videos, model, boosters);
             case "gate":
-                return async ? join(client.gateAsync(args.get("action"), args.get("context"), images, videos, model))
-                        : client.gate(args.get("action"), args.get("context"), images, videos, model);
+                return async ? join(client.gateAsync(args.get("action"), args.get("context"), images, videos, model, boosters))
+                        : client.gate(args.get("action"), args.get("context"), images, videos, model, boosters);
             case "models":
                 return async ? join(client.modelsAsync()) : client.models();
             case "upload": {
@@ -1389,6 +1467,9 @@ class ConformanceTest {
             if (r.get("videos") != null) {
                 b.videos(list(r.get("videos")));
             }
+            if (r.get("boosters") != null) {
+                b.boosters(list(r.get("boosters")));
+            }
             b.model((String) r.get("model"));
             out.add(b.build());
         }
@@ -1409,6 +1490,9 @@ class ConformanceTest {
         }
         if (args.get("videos") != null) {
             b.videos(list(args.get("videos")));
+        }
+        if (args.get("boosters") != null) {
+            b.boosters(list(args.get("boosters")));
         }
         if (args.get("model") != null) {
             b.model((String) args.get("model"));
@@ -1496,6 +1580,25 @@ class ConformanceTest {
                     }
                     case "$frame":
                         return videoFrame(map(decode(e.getValue(), ctx)));
+                    case "$booster": {
+                        // Booster(name, images, require, options), each setting only when present
+                        Map<String, Object> a = map(decode(e.getValue(), ctx));
+                        Booster b = Booster.of((String) (a.containsKey("booster") ? a.get("booster") : a.get("name")));
+                        if (a.get("images") != null) {
+                            List<String> ids = new ArrayList<>();
+                            for (Object o : list(a.get("images"))) {
+                                ids.add((String) o);
+                            }
+                            b = b.images(ids);
+                        }
+                        if (a.get("require") != null) {
+                            b = b.require((Boolean) a.get("require"));
+                        }
+                        if (a.get("options") != null) {
+                            b = b.options(map(a.get("options")));
+                        }
+                        return b;
+                    }
                     default:
                         break;
                 }
@@ -1644,6 +1747,10 @@ class ConformanceTest {
                 if (EXACT.contains(k)) {
                     if (!same(entry.getValue(), a.get(k))) {
                         fail(path + "." + k + ": expected " + entry.getValue() + ", got " + a.get(k));
+                    }
+                    if (ORDERED.contains(k) && entry.getValue() instanceof Map<?, ?> em && a.get(k) instanceof Map<?, ?> am
+                            && !new ArrayList<>(em.keySet()).equals(new ArrayList<>(am.keySet()))) {
+                        fail(path + "." + k + ": expected the keys in the order " + em.keySet() + ", got " + am.keySet());
                     }
                 } else {
                     match(entry.getValue(), a.get(k), path + "." + k);

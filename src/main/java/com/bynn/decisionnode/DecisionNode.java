@@ -48,9 +48,9 @@ import javax.net.ssl.SSLContext;
  */
 public final class DecisionNode {
     /** This SDK's version, sent in the {@code User-Agent} header. */
-    public static final String VERSION = "0.2.0";
+    public static final String VERSION = "0.3.0";
     /** The version of the DecisionNode SDK specification this SDK implements. */
-    public static final String SPEC_VERSION = "1.2";
+    public static final String SPEC_VERSION = "1.3";
 
     /** The most images one upload call takes: one presign holds 1 to 16 files. */
     static final int MAX_UPLOAD_FILES = 16;
@@ -253,7 +253,18 @@ public final class DecisionNode {
      * to 4; may be null.
      */
     public Decision decide(Object state, Map<String, ?> questions, List<?> images, List<?> videos, String model) {
-        return decide(DecideRequest.builder().state(state).questions(questions).images(images).videos(videos).model(model).build());
+        return decide(state, questions, images, videos, model, null);
+    }
+
+    /**
+     * {@link #decide(Object, Map, List, List, String)} with boosters: {@link Booster}s, booster
+     * names or wire-form maps, read before the decision and returned in
+     * {@link Decision#evidence()}; may be null.
+     */
+    public Decision decide(
+            Object state, Map<String, ?> questions, List<?> images, List<?> videos, String model, List<?> boosters) {
+        return decide(DecideRequest.builder().state(state).questions(questions).images(images).videos(videos)
+                .boosters(boosters).model(model).build());
     }
 
     public CompletableFuture<Decision> decideAsync(DecideRequest request) {
@@ -276,7 +287,13 @@ public final class DecisionNode {
 
     public CompletableFuture<Decision> decideAsync(
             Object state, Map<String, ?> questions, List<?> images, List<?> videos, String model) {
-        return decideAsync(DecideRequest.builder().state(state).questions(questions).images(images).videos(videos).model(model).build());
+        return decideAsync(state, questions, images, videos, model, null);
+    }
+
+    public CompletableFuture<Decision> decideAsync(
+            Object state, Map<String, ?> questions, List<?> images, List<?> videos, String model, List<?> boosters) {
+        return decideAsync(DecideRequest.builder().state(state).questions(questions).images(images).videos(videos)
+                .boosters(boosters).model(model).build());
     }
 
     // ------------------------------------------------------------------ one request, checked and sent
@@ -327,6 +344,11 @@ public final class DecisionNode {
         head.put("model", m != null && !m.isEmpty() ? m : model);
         head.put("state", request.state() == null ? "" : request.state());
         head.put("questions", request.questions());
+        if (!request.boosters().isEmpty()) {
+            // Left out when none are given, so the body is the one a request without boosters
+            // always had. The list is the API's to judge; only its nesting counts here.
+            head.put("boosters", Booster.wires(request.boosters()));
+        }
         // The server's order: the body (nesting, the 422 entries, the first 400), then the
         // images, then the videos.
         Map<String, Object> limits = limits((String) head.get("model"));
@@ -537,7 +559,13 @@ public final class DecisionNode {
 
     /** {@link #check(Object, Object, Object, Object, List, String)} with videos. */
     public TruthAnswer check(Object state, Object instructions, Object ifTrue, Object ifFalse, List<?> images, List<?> videos, String model) {
-        return Transport.await(checkAsync(state, instructions, ifTrue, ifFalse, images, videos, model));
+        return check(state, instructions, ifTrue, ifFalse, images, videos, model, null);
+    }
+
+    /** {@link #check(Object, Object, Object, Object, List, List, String)} with boosters. */
+    public TruthAnswer check(Object state, Object instructions, Object ifTrue, Object ifFalse, List<?> images, List<?> videos,
+            String model, List<?> boosters) {
+        return Transport.await(checkAsync(state, instructions, ifTrue, ifFalse, images, videos, model, boosters));
     }
 
     public CompletableFuture<TruthAnswer> checkAsync(Object state, Object instructions) {
@@ -555,7 +583,13 @@ public final class DecisionNode {
 
     public CompletableFuture<TruthAnswer> checkAsync(
             Object state, Object instructions, Object ifTrue, Object ifFalse, List<?> images, List<?> videos, String model) {
-        return single(state, "check", Questions.truth(instructions, ifTrue, ifFalse), images, videos, model, TruthAnswer.class);
+        return checkAsync(state, instructions, ifTrue, ifFalse, images, videos, model, null);
+    }
+
+    public CompletableFuture<TruthAnswer> checkAsync(Object state, Object instructions, Object ifTrue, Object ifFalse,
+            List<?> images, List<?> videos, String model, List<?> boosters) {
+        return single(state, "check", Questions.truth(instructions, ifTrue, ifFalse), images, videos, model, boosters,
+                TruthAnswer.class);
     }
 
     /** One {@code choice} question, sent under the id {@code classify}. Options are a map of name to description. */
@@ -575,7 +609,13 @@ public final class DecisionNode {
 
     /** The classify call above with videos. */
     public ChoiceAnswer classify(Object state, Object instructions, Map<String, ?> options, List<?> images, List<?> videos, String model) {
-        return Transport.await(classifyAsync(state, instructions, options, images, videos, model));
+        return classify(state, instructions, options, images, videos, model, null);
+    }
+
+    /** The classify call above with boosters. */
+    public ChoiceAnswer classify(Object state, Object instructions, Map<String, ?> options, List<?> images, List<?> videos,
+            String model, List<?> boosters) {
+        return Transport.await(classifyAsync(state, instructions, options, images, videos, model, boosters));
     }
 
     /** {@link #classify(Object, Object, List)} with images and a model. */
@@ -585,7 +625,13 @@ public final class DecisionNode {
 
     /** The classify call above with videos. */
     public ChoiceAnswer classify(Object state, Object instructions, List<String> options, List<?> images, List<?> videos, String model) {
-        return Transport.await(classifyAsync(state, instructions, options, images, videos, model));
+        return classify(state, instructions, options, images, videos, model, null);
+    }
+
+    /** The classify call above with boosters. */
+    public ChoiceAnswer classify(Object state, Object instructions, List<String> options, List<?> images, List<?> videos,
+            String model, List<?> boosters) {
+        return Transport.await(classifyAsync(state, instructions, options, images, videos, model, boosters));
     }
 
     public CompletableFuture<ChoiceAnswer> classifyAsync(Object state, Object instructions, Map<String, ?> options) {
@@ -603,7 +649,13 @@ public final class DecisionNode {
 
     public CompletableFuture<ChoiceAnswer> classifyAsync(
             Object state, Object instructions, Map<String, ?> options, List<?> images, List<?> videos, String model) {
-        return single(state, "classify", Questions.choice(instructions, options), images, videos, model, ChoiceAnswer.class);
+        return classifyAsync(state, instructions, options, images, videos, model, null);
+    }
+
+    public CompletableFuture<ChoiceAnswer> classifyAsync(Object state, Object instructions, Map<String, ?> options,
+            List<?> images, List<?> videos, String model, List<?> boosters) {
+        return single(state, "classify", Questions.choice(instructions, options), images, videos, model, boosters,
+                ChoiceAnswer.class);
     }
 
     public CompletableFuture<ChoiceAnswer> classifyAsync(
@@ -613,7 +665,13 @@ public final class DecisionNode {
 
     public CompletableFuture<ChoiceAnswer> classifyAsync(
             Object state, Object instructions, List<String> options, List<?> images, List<?> videos, String model) {
-        return single(state, "classify", Questions.choice(instructions, options), images, videos, model, ChoiceAnswer.class);
+        return classifyAsync(state, instructions, options, images, videos, model, null);
+    }
+
+    public CompletableFuture<ChoiceAnswer> classifyAsync(Object state, Object instructions, List<String> options,
+            List<?> images, List<?> videos, String model, List<?> boosters) {
+        return single(state, "classify", Questions.choice(instructions, options), images, videos, model, boosters,
+                ChoiceAnswer.class);
     }
 
     /** One {@code score} question, sent under the id {@code score}. Levels run from low to high. */
@@ -628,7 +686,13 @@ public final class DecisionNode {
 
     /** {@link #score(Object, Object, List, List, String)} with videos. */
     public ScoreAnswer score(Object state, Object instructions, List<?> levels, List<?> images, List<?> videos, String model) {
-        return Transport.await(scoreAsync(state, instructions, levels, images, videos, model));
+        return score(state, instructions, levels, images, videos, model, null);
+    }
+
+    /** {@link #score(Object, Object, List, List, List, String)} with boosters. */
+    public ScoreAnswer score(Object state, Object instructions, List<?> levels, List<?> images, List<?> videos, String model,
+            List<?> boosters) {
+        return Transport.await(scoreAsync(state, instructions, levels, images, videos, model, boosters));
     }
 
     public CompletableFuture<ScoreAnswer> scoreAsync(Object state, Object instructions, List<?> levels) {
@@ -642,7 +706,12 @@ public final class DecisionNode {
 
     public CompletableFuture<ScoreAnswer> scoreAsync(
             Object state, Object instructions, List<?> levels, List<?> images, List<?> videos, String model) {
-        return single(state, "score", Questions.score(instructions, levels), images, videos, model, ScoreAnswer.class);
+        return scoreAsync(state, instructions, levels, images, videos, model, null);
+    }
+
+    public CompletableFuture<ScoreAnswer> scoreAsync(Object state, Object instructions, List<?> levels, List<?> images,
+            List<?> videos, String model, List<?> boosters) {
+        return single(state, "score", Questions.score(instructions, levels), images, videos, model, boosters, ScoreAnswer.class);
     }
 
     /**
@@ -662,7 +731,13 @@ public final class DecisionNode {
     /** {@link #number(Object, Object, Number, Number, Number, List, String)} with videos. */
     public NumberAnswer number(
             Object state, Object instructions, Number min, Number max, Number step, List<?> images, List<?> videos, String model) {
-        return Transport.await(numberAsync(state, instructions, min, max, step, images, videos, model));
+        return number(state, instructions, min, max, step, images, videos, model, null);
+    }
+
+    /** {@link #number(Object, Object, Number, Number, Number, List, List, String)} with boosters. */
+    public NumberAnswer number(Object state, Object instructions, Number min, Number max, Number step, List<?> images,
+            List<?> videos, String model, List<?> boosters) {
+        return Transport.await(numberAsync(state, instructions, min, max, step, images, videos, model, boosters));
     }
 
     public CompletableFuture<NumberAnswer> numberAsync(Object state, Object instructions, Number min, Number max, Number step) {
@@ -676,15 +751,21 @@ public final class DecisionNode {
 
     public CompletableFuture<NumberAnswer> numberAsync(
             Object state, Object instructions, Number min, Number max, Number step, List<?> images, List<?> videos, String model) {
-        return single(state, "number", Questions.number(instructions, min, max, step), images, videos, model, NumberAnswer.class);
+        return numberAsync(state, instructions, min, max, step, images, videos, model, null);
     }
 
-    private <T extends Answer> CompletableFuture<T> single(
-            Object state, String id, Question q, List<?> images, List<?> videos, String model, Class<T> type) {
+    public CompletableFuture<NumberAnswer> numberAsync(Object state, Object instructions, Number min, Number max, Number step,
+            List<?> images, List<?> videos, String model, List<?> boosters) {
+        return single(state, "number", Questions.number(instructions, min, max, step), images, videos, model, boosters,
+                NumberAnswer.class);
+    }
+
+    private <T extends Answer> CompletableFuture<T> single(Object state, String id, Question q, List<?> images,
+            List<?> videos, String model, List<?> boosters, Class<T> type) {
         Plan plan;
         try {
-            plan = plan("/v1/decide",
-                    DecideRequest.builder().state(state).question(id, q).images(images).videos(videos).model(model).build());
+            plan = plan("/v1/decide", DecideRequest.builder().state(state).question(id, q).images(images).videos(videos)
+                    .boosters(boosters).model(model).build());
         } catch (RuntimeException e) {
             return CompletableFuture.failedFuture(e);
         }
@@ -725,7 +806,12 @@ public final class DecisionNode {
 
     /** {@link #gate(Object, Object, List, String)} with videos. */
     public Decision gate(Object action, Object context, List<?> images, List<?> videos, String model) {
-        return Transport.await(gateAsync(action, context, images, videos, model));
+        return gate(action, context, images, videos, model, null);
+    }
+
+    /** {@link #gate(Object, Object, List, List, String)} with boosters. */
+    public Decision gate(Object action, Object context, List<?> images, List<?> videos, String model, List<?> boosters) {
+        return Transport.await(gateAsync(action, context, images, videos, model, boosters));
     }
 
     public CompletableFuture<Decision> gateAsync(Object action, Object context) {
@@ -737,6 +823,11 @@ public final class DecisionNode {
     }
 
     public CompletableFuture<Decision> gateAsync(Object action, Object context, List<?> images, List<?> videos, String model) {
+        return gateAsync(action, context, images, videos, model, null);
+    }
+
+    public CompletableFuture<Decision> gateAsync(
+            Object action, Object context, List<?> images, List<?> videos, String model, List<?> boosters) {
         Map<String, Object> state = new LinkedHashMap<>();
         state.put("action", action);
         if (context != null) {
@@ -757,6 +848,7 @@ public final class DecisionNode {
                                 "block", "should not run")))
                 .images(images)
                 .videos(videos)
+                .boosters(boosters)
                 .model(model)
                 .build());
     }

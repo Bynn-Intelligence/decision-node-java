@@ -7,8 +7,8 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * The arguments of one decision: the state, the questions by id, optional images, optional videos
- * and an optional model. Used by {@link DecisionNode#decide(DecideRequest)} and {@link DecisionNode#decideMany}.
+ * The arguments of one decision: the state, the questions by id, optional images, optional videos,
+ * optional boosters and an optional model. Used by {@link DecisionNode#decide(DecideRequest)} and {@link DecisionNode#decideMany}.
  *
  * <pre>{@code
  * DecideRequest req = DecideRequest.builder()
@@ -23,6 +23,7 @@ public final class DecideRequest {
     private final Map<String, Object> questions;
     private final List<Object> images;
     private final List<Object> videos;
+    private final List<Object> boosters;
     private final String model;
 
     private DecideRequest(Builder b) {
@@ -30,6 +31,7 @@ public final class DecideRequest {
         this.questions = Collections.unmodifiableMap(new LinkedHashMap<>(b.questions));
         this.images = Collections.unmodifiableList(new ArrayList<>(b.images));
         this.videos = Collections.unmodifiableList(new ArrayList<>(b.videos));
+        this.boosters = Collections.unmodifiableList(new ArrayList<>(b.boosters));
         this.model = b.model;
     }
 
@@ -61,6 +63,11 @@ public final class DecideRequest {
         return videos;
     }
 
+    /** {@link Booster}s, booster names or wire-form maps, in the order given. */
+    public List<Object> boosters() {
+        return boosters;
+    }
+
     /** The model for this request, or null for the client's. An empty string counts as null. */
     public String model() {
         return model;
@@ -71,6 +78,7 @@ public final class DecideRequest {
         private final Map<String, Object> questions = new LinkedHashMap<>();
         private final List<Object> images = new ArrayList<>();
         private final List<Object> videos = new ArrayList<>();
+        private final List<Object> boosters = new ArrayList<>();
         private String model;
 
         private Builder() {}
@@ -122,7 +130,33 @@ public final class DecideRequest {
             return this;
         }
 
-        /** The model for this request, for example {@code decisionnode-flash-latest}. */
+        /** Adds a booster by name, for example {@code age}: it reads every image of the request. */
+        public Builder booster(String name) {
+            boosters.add(name);
+            return this;
+        }
+
+        /** Adds a booster with its settings. */
+        public Builder booster(Booster booster) {
+            boosters.add(booster);
+            return this;
+        }
+
+        /**
+         * Adds boosters: {@link Booster}s, names or wire-form maps, sent in this order. Up to 4 a
+         * request, each at most once; the API checks the list.
+         */
+        public Builder boosters(List<?> boosters) {
+            if (boosters != null) {
+                this.boosters.addAll(boosters);
+            }
+            return this;
+        }
+
+        /**
+         * The model for this request, for example {@code decisionnode-flash-latest}, or a fine-tuned
+         * model's name ({@code decisionnode-1.0-flash@acme/fraud}, {@code ...:3} for one version).
+         */
         public Builder model(String model) {
             this.model = model;
             return this;
