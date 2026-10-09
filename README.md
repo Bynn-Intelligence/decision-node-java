@@ -242,6 +242,13 @@ frame or in a batch line go by their upload id whatever their size. If the API a
 upload this client placed has expired or been used up, the client uploads it again and sends the
 request once more. No image is resized or re-encoded.
 
+A request body may be at most 25 MiB (`DecisionNode.MAX_BODY_BYTES`, 26,214,400 bytes), counted as
+it would be sent: inline images and video frames included, an image to upload named by its upload
+id. A larger body raises `RequestTooLargeError` before anything is sent or uploaded, in `decide`,
+the helpers, `decideMany` (for the whole call) and each batch line. Images given as a path or bytes
+above the inline threshold are uploaded, so they never count toward it; base64 given in a
+wire-form map is sent as given and does.
+
 ```java
 List<String> ids = dn.upload(List.of(Image.fromPath("scan", Path.of("scan.png"))));  // upload now
 dn.decide(state, questions, List.of(Image.fromUpload("scan", ids.get(0))), null);
@@ -541,6 +548,7 @@ Only a 2xx response is a success. A 2xx whose body is not JSON is a `ServerError
 | 403 refusal | `RefusalError` | `category()` (`harm` or `self_harm`), `safety()` |
 | 403 other (a booster turned off, a suspended workspace) | `PermissionDeniedError` | |
 | 404 | `NotFoundError` | |
+| 413, or a body over 25 MiB before sending | `RequestTooLargeError` | |
 | 422 | `ValidationError` | `entries()` |
 | 429 | `RateLimitError`; `SessionLimitError` (a subclass) for `session_limit_exceeded` | `retryAfter()` in seconds |
 | 529 | `OverloadedError` | `retryAfter()` in seconds |

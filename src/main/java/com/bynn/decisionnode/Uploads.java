@@ -164,6 +164,48 @@ final class Uploads {
         });
     }
 
+    /** The length of an upload id, {@code upl_} and 32 characters. */
+    private static final String PLACEHOLDER_ID = "upl_" + "0".repeat(32);
+
+    /**
+     * The wire forms {@link #wires} would give, with nothing uploaded: an image it would upload is
+     * named by a placeholder id of an upload id's length, so the body's size is known before
+     * anything is sent.
+     */
+    List<Object> projected(List<?> images, boolean withIds) {
+        Object[] wires = new Object[images.size()];
+        List<Integer> local = new ArrayList<>();
+        long total = 0;
+        for (int i = 0; i < images.size(); i++) {
+            Object o = images.get(i);
+            if (!(o instanceof Image)) {
+                wires[i] = o;
+                continue;
+            }
+            Image img = (Image) o;
+            if (!img.isLocal()) {
+                Map<String, Object> m = img.toMap();
+                if (!withIds) {
+                    m.remove("id");
+                }
+                wires[i] = m;
+                continue;
+            }
+            total += img.size();
+            String hit = cached(img);
+            if (hit != null) {
+                wires[i] = byId(img, hit, withIds);
+            } else {
+                local.add(i);
+            }
+        }
+        for (int i : local) {
+            Image img = (Image) images.get(i);
+            wires[i] = total < inlineThreshold ? img.inline(withIds) : byId(img, PLACEHOLDER_ID, withIds);
+        }
+        return java.util.Arrays.asList(wires);
+    }
+
     private static Map<String, Object> byId(Image img, String uploadId, boolean withId) {
         Map<String, Object> m = new LinkedHashMap<>();
         if (withId) {

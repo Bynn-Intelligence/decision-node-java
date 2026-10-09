@@ -70,6 +70,13 @@ public final class DecisionNode {
     public static final Duration DEFAULT_UPLOAD_TIMEOUT = Duration.ofSeconds(60);
     public static final int DEFAULT_MAX_RETRIES = 2;
     public static final int DEFAULT_CONCURRENCY = 8;
+    /**
+     * The API's request body limit in bytes, 25 MiB. A body over it, as it would be sent (inline
+     * images and video frames included), is refused before anything is sent with
+     * {@link RequestTooLargeError}. Images given as a path or bytes above the inline threshold are
+     * uploaded and do not count toward it.
+     */
+    public static final int MAX_BODY_BYTES = 26_214_400;
 
     /** The {@code error_type}s that say an upload this client placed is no longer usable. */
     private static final Set<String> STALE_UPLOAD = Set.of("upload_expired", "upload_consumed", "upload_not_found", "upload_incomplete");
@@ -313,17 +320,22 @@ public final class DecisionNode {
         Map<String, Object> head = checked(request);
         List<Object> images = request.images();
         if (images.isEmpty()) {
-            return new Plan(path, head, images, Json.write(head), Set.of());
+            byte[] payload = Json.write(head);
+            LocalChecks.bodySize(payload.length);
+            return new Plan(path, head, images, payload, Set.of());
         }
         CompletableFuture<Uploads.Wires> wires = needsUpload(images) ? null : uploads.wires(images, true, false);
         if (wires != null && wires.isDone()) {
             Uploads.Wires w = wires.join();
             Map<String, Object> body = new LinkedHashMap<>(head);
             body.put("images", w.wires());
-            return new Plan(path, head, images, Json.write(body), w.placed());
+            byte[] payload = Json.write(body);
+            LocalChecks.bodySize(payload.length);
+            return new Plan(path, head, images, payload, w.placed());
         }
-        // Some images go up first: a body that cannot be serialised fails before any upload.
-        Json.write(head);
+        // Some images go up first: the body as it will be sent, each upload named by a placeholder
+        // id, must be serialisable and within the API's limit before any upload.
+        checkSize(head, images);
         return new Plan(path, head, images, null, Set.of());
     }
 
@@ -376,7 +388,17 @@ public final class DecisionNode {
      * @throws IllegalArgumentException for an argument that cannot be sent
      */
     public void checkRequest(DecideRequest request) {
-        Json.write(checked(request));
+        checkSize(checked(request), request.images());
+    }
+
+    /** The body as it would be sent, with nothing uploaded, against the API's limit. */
+    private void checkSize(Map<String, Object> head, List<Object> images) {
+        Map<String, Object> body = head;
+        if (!images.isEmpty()) {
+            body = new LinkedHashMap<>(head);
+            body.put("images", uploads.projected(images, true));
+        }
+        LocalChecks.bodySize(Json.write(body).length);
     }
 
     /**

@@ -1824,11 +1824,22 @@ class ConformanceTest {
         return out;
     }
 
+    /**
+     * Reads the mock's control answers. Its request log echoes bodies of up to 25 MiB, longer
+     * strings than the SDK's own reader takes, so the harness reads them with a wider limit.
+     */
+    private static final com.fasterxml.jackson.databind.ObjectMapper LOG_READER = Json.MAPPER.copy();
+
+    static {
+        LOG_READER.getFactory().setStreamReadConstraints(
+                com.fasterxml.jackson.core.StreamReadConstraints.builder().maxStringLength(64 << 20).build());
+    }
+
     private static Map<String, Object> control(String pathAndQuery) throws Exception {
         HttpResponse<byte[]> r = CONTROL.send(
                 HttpRequest.newBuilder(URI.create(mockUrl + pathAndQuery)).GET().build(),
                 HttpResponse.BodyHandlers.ofByteArray());
-        return map(Json.read(r.body()));
+        return map(LOG_READER.readValue(r.body(), Object.class));
     }
 
     private static Map<String, Object> map(Object o) {

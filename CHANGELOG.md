@@ -24,6 +24,10 @@ Implements version 1.3 of the DecisionNode SDK specification: boosters and fine-
   header, empty when the header is absent.
 - Fine-tuned models: `ModelInfo.fineTuned()`, `base()`, `adapterVersion()` and `status()`, null on
   a catalogue entry. A fine-tuned model's name is sent as given in `model`.
+- The API's 25 MiB request body limit, `DecisionNode.MAX_BODY_BYTES`: a body over it, as it would
+  be sent, raises the new `RequestTooLargeError` before anything is sent or uploaded, in `decide`,
+  the helpers, `decideMany`, `checkRequest` and each batch line. Every 413 from the API is a
+  `RequestTooLargeError` too (the base `DecisionNodeError` before), never retried.
 
 ### Changed
 

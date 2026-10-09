@@ -1128,6 +1128,22 @@ final class LocalChecks {
         return new BadRequestError(new ErrorInfo(null, null, message, null, reason, Map.of("detail", message), Map.of()));
     }
 
+    /** What the API answers a body over its limit with. */
+    static final String BODY_TOO_LARGE = "The request body is over 26,214,400 bytes (25 MiB). "
+            + "Send large images as uploads (POST /v1/uploads) and name them by upload_id.";
+
+    /**
+     * The API's body limit, on the encoded body as it would be sent: over it, the API's 413 is
+     * raised here, before anything is sent or uploaded.
+     */
+    static void bodySize(long bytes) {
+        if (bytes > DecisionNode.MAX_BODY_BYTES) {
+            throw new RequestTooLargeError(info(
+                    "request_too_large_error", BODY_TOO_LARGE,
+                    "the body is " + bytes + " bytes; the limit is " + DecisionNode.MAX_BODY_BYTES));
+        }
+    }
+
     /** A 400 {@code api_usage_error}. */
     static BadRequestError usage(String message, String reason) {
         return new BadRequestError(info("api_usage_error", message, reason == null ? message : reason));

@@ -311,11 +311,16 @@ public final class Batches {
             if (!videos.isEmpty()) {
                 head.put("videos", videos);
             }
+            // Each line as it would be sent, an image to upload named by a placeholder id, within
+            // the API's body limit; a value that cannot be serialised fails here too.
             byte[] line = null;
             if (r.images().isEmpty()) {
                 line = line(head);
+                LocalChecks.bodySize(line.length - 1);
             } else {
-                Json.write(head); // a value that cannot be serialised fails before anything is sent
+                Map<String, Object> body = new LinkedHashMap<>(head);
+                body.put("images", client.uploads().projected(r.images(), true));
+                LocalChecks.bodySize(Json.write(body).length);
             }
             out.add(new LinePlan(head, r.images(), line));
         }

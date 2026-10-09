@@ -422,6 +422,9 @@ final class Responses {
         if (status == 404) {
             return new NotFoundError(info);
         }
+        if (status == 413) {
+            return new RequestTooLargeError(info);
+        }
         if (status == 422) {
             return new ValidationError(info, entries);
         }
