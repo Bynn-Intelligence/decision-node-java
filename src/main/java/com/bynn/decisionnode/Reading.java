@@ -2,10 +2,12 @@ package com.bynn.decisionnode;
 
 /**
  * One reading of a booster: what it found in one image. It is an {@link AgeReading}, an
- * {@link AiGeneratedReading}, an {@link OcrReading}, or an {@link UnknownReading} for a booster
- * this SDK version does not know, or for a reading whose fields are missing or of the wrong type.
+ * {@link AiGeneratedReading}, a {@link FaceDetectionReading}, a {@link WantedPersonReading}, an
+ * {@link OcrReading}, or an {@link UnknownReading} for a booster this SDK version does not know, or
+ * for a reading whose fields are missing or of the wrong type.
  */
-public sealed interface Reading permits AgeReading, AiGeneratedReading, OcrReading, UnknownReading {
+public sealed interface Reading
+        permits AgeReading, AiGeneratedReading, FaceDetectionReading, WantedPersonReading, OcrReading, UnknownReading {
 
     /** The name of the booster that read, for example {@code age}. */
     String booster();

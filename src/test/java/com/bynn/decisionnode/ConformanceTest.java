@@ -1020,6 +1020,31 @@ class ConformanceTest {
             }
             n.put("c2pa_signer", g.c2paSigner());
             n.put("c2pa", g.c2pa());
+        } else if (r instanceof FaceDetectionReading f) {
+            n.put("kind", "face_detection");
+            n.put("image", f.image());
+            n.put("faces", f.faces());
+            List<Object> list = new ArrayList<>();
+            for (FaceDetection d : f.detections()) {
+                Map<String, Object> e = new LinkedHashMap<>();
+                e.put("box", normBox(d.box()));
+                e.put("confidence", d.confidence());
+                list.add(e);
+            }
+            n.put("detections", list);
+        } else if (r instanceof WantedPersonReading w) {
+            n.put("kind", "wanted_person");
+            n.put("image", w.image());
+            n.put("faces", w.faces());
+            List<Object> list = new ArrayList<>();
+            for (WantedMatch m : w.matches()) {
+                Map<String, Object> e = new LinkedHashMap<>();
+                e.put("box", normBox(m.box()));
+                e.put("score", m.score());
+                e.put("reference", m.reference());
+                list.add(e);
+            }
+            n.put("matches", list);
         } else if (r instanceof OcrReading o) {
             n.put("kind", "ocr");
             n.put("image", o.image());
@@ -1030,6 +1055,15 @@ class ConformanceTest {
             n.put("raw", r.raw());
         }
         return n;
+    }
+
+    static Map<String, Object> normBox(FaceBox b) {
+        Map<String, Object> box = new LinkedHashMap<>();
+        box.put("x1", b.x1());
+        box.put("y1", b.y1());
+        box.put("x2", b.x2());
+        box.put("y2", b.y2());
+        return box;
     }
 
     static Map<String, Object> normAnswers(Map<String, Answer> answers) {

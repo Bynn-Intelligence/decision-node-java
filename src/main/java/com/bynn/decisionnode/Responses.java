@@ -96,6 +96,8 @@ final class Responses {
             Map<String, Object> view = Collections.unmodifiableMap(raw);
             Reading typed = "age".equals(booster) ? ageReading(view)
                     : "ai_generated".equals(booster) ? aiGeneratedReading(view)
+                    : "face_detection".equals(booster) ? faceDetectionReading(view)
+                    : "wanted_person".equals(booster) ? wantedPersonReading(view)
                     : "ocr".equals(booster) ? ocrReading(view)
                     : null;
             if (typed != null) {
@@ -103,6 +105,79 @@ final class Responses {
             }
         }
         return new UnknownReading(booster, raw == null ? value : Collections.unmodifiableMap(raw));
+    }
+
+    /**
+     * A face_detection reading: a string image, faces a whole number of at least 0 (a JSON integer,
+     * never 3.0), and detections a list of {box, confidence}.
+     */
+    private static FaceDetectionReading faceDetectionReading(Map<String, Object> raw) {
+        Object image = raw.get("image");
+        Long faces = integer(raw.get("faces"));
+        List<Object> found = Json.asList(raw.get("detections"));
+        if (!(image instanceof String) || faces == null || faces < 0 || found == null) {
+            return null;
+        }
+        List<FaceDetection> detections = new ArrayList<>(found.size());
+        for (Object o : found) {
+            Map<String, Object> d = Json.asMap(o);
+            FaceBox box = d == null ? null : faceBox(d.get("box"));
+            Double confidence = d == null ? null : Json.asDouble(d.get("confidence"));
+            if (box == null || confidence == null) {
+                return null;
+            }
+            detections.add(new FaceDetection(box, confidence));
+        }
+        return new FaceDetectionReading((String) image, faces, Collections.unmodifiableList(detections), raw);
+    }
+
+    /**
+     * A wanted_person reading: a string image, faces a whole number of at least 0, and matches a list
+     * of {box, score, reference}.
+     */
+    private static WantedPersonReading wantedPersonReading(Map<String, Object> raw) {
+        Object image = raw.get("image");
+        Long faces = integer(raw.get("faces"));
+        List<Object> found = Json.asList(raw.get("matches"));
+        if (!(image instanceof String) || faces == null || faces < 0 || found == null) {
+            return null;
+        }
+        List<WantedMatch> matches = new ArrayList<>(found.size());
+        for (Object o : found) {
+            Map<String, Object> m = Json.asMap(o);
+            FaceBox box = m == null ? null : faceBox(m.get("box"));
+            Double score = m == null ? null : Json.asDouble(m.get("score"));
+            Object reference = m == null ? null : m.get("reference");
+            if (box == null || score == null || !(reference instanceof String)) {
+                return null;
+            }
+            matches.add(new WantedMatch(box, score, (String) reference));
+        }
+        return new WantedPersonReading((String) image, faces, Collections.unmodifiableList(matches), raw);
+    }
+
+    /** A face's box: four numbers, as sent; null when a corner is missing or not a number. */
+    private static FaceBox faceBox(Object value) {
+        Map<String, Object> b = Json.asMap(value);
+        if (b == null) {
+            return null;
+        }
+        Double x1 = Json.asDouble(b.get("x1"));
+        Double y1 = Json.asDouble(b.get("y1"));
+        Double x2 = Json.asDouble(b.get("x2"));
+        Double y2 = Json.asDouble(b.get("y2"));
+        return x1 == null || y1 == null || x2 == null || y2 == null ? null : new FaceBox(x1, y1, x2, y2);
+    }
+
+    /** A JSON integer (never a float such as 3.0), as a long; null for anything else. */
+    private static Long integer(Object v) {
+        if (v instanceof Integer || v instanceof Long || v instanceof Short || v instanceof Byte) {
+            return ((Number) v).longValue();
+        }
+        if (v instanceof java.math.BigInteger b) {
+            return b.bitLength() < 64 ? b.longValue() : null;
+        }
+        return null;
     }
 
     /** An ocr reading: a string image and text (empty allowed), and truncated a boolean, all always sent. */
