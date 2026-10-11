@@ -1020,6 +1020,11 @@ class ConformanceTest {
             }
             n.put("c2pa_signer", g.c2paSigner());
             n.put("c2pa", g.c2pa());
+        } else if (r instanceof OcrReading o) {
+            n.put("kind", "ocr");
+            n.put("image", o.image());
+            n.put("text", o.text());
+            n.put("truncated", o.truncated());
         } else {
             n.put("kind", "unknown");
             n.put("raw", r.raw());

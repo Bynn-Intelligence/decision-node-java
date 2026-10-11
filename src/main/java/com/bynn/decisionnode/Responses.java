@@ -96,12 +96,24 @@ final class Responses {
             Map<String, Object> view = Collections.unmodifiableMap(raw);
             Reading typed = "age".equals(booster) ? ageReading(view)
                     : "ai_generated".equals(booster) ? aiGeneratedReading(view)
+                    : "ocr".equals(booster) ? ocrReading(view)
                     : null;
             if (typed != null) {
                 return typed;
             }
         }
         return new UnknownReading(booster, raw == null ? value : Collections.unmodifiableMap(raw));
+    }
+
+    /** An ocr reading: a string image and text (empty allowed), and truncated a boolean, all always sent. */
+    private static OcrReading ocrReading(Map<String, Object> raw) {
+        Object image = raw.get("image");
+        Object text = raw.get("text");
+        Object truncated = raw.get("truncated");
+        if (!(image instanceof String) || !(text instanceof String) || !(truncated instanceof Boolean)) {
+            return null;
+        }
+        return new OcrReading((String) image, (String) text, (Boolean) truncated, raw);
     }
 
     private static AgeReading ageReading(Map<String, Object> raw) {

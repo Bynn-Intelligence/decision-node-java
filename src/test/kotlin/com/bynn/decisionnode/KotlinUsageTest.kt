@@ -107,6 +107,7 @@ class KotlinUsageTest {
         val text = when (reading) {
             is AgeReading -> "age ${reading.ageYears()}"
             is AiGeneratedReading -> "generated ${reading.generated()}"
+            is OcrReading -> "text ${reading.text()}"
             is UnknownReading -> "unknown ${reading.booster()}"
         }
         assertEquals("age 27", text)

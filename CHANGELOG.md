@@ -10,6 +10,9 @@ Implements version 1.3 of the DecisionNode SDK specification: boosters and fine-
 
 ### Added
 
+- `OcrReading` (`image`, `text`, `truncated`, `raw`): the `ocr` booster's reading, the text a
+  picture shows (`""` when it shows none), in the sealed `Reading` hierarchy. A reading without a
+  string `text` or `image`, or without a boolean `truncated`, is an `UnknownReading`.
 - `Usage.cost()`: what an answer cost, as the API sends it, in a `Cost` record (`usd`,
   `modelUsd`, `boostersUsd`, `freeTier`, `raw`), on decisions, batch result lines and a session's
   open and frame replies; null when the answer does not carry it. `usd` is read as sent, never
@@ -66,6 +69,9 @@ and the point and box question types.
 
 ### Added
 
+- `OcrReading` (`image`, `text`, `truncated`, `raw`): the `ocr` booster's reading, the text a
+  picture shows (`""` when it shows none), in the sealed `Reading` hierarchy. A reading without a
+  string `text` or `image`, or without a boolean `truncated`, is an `UnknownReading`.
 - `Usage.cost()`: what an answer cost, as the API sends it, in a `Cost` record (`usd`,
   `modelUsd`, `boostersUsd`, `freeTier`, `raw`), on decisions, batch result lines and a session's
   open and frame replies; null when the answer does not carry it. `usd` is read as sent, never
