@@ -40,12 +40,12 @@ class FaceReadingsTest {
     @Test
     void wantedPersonMatches() throws Exception {
         List<Reading> r = readings("wanted_person", "[{\"image\":\"door\",\"faces\":2,\"matches\":["
-                + "{\"box\":{\"x1\":10,\"y1\":20,\"x2\":110,\"y2\":140},\"score\":0.91,\"reference\":\"ref_00A1:7\"}]},"
+                + "{\"box\":{\"x1\":10,\"y1\":20,\"x2\":110,\"y2\":140},\"score\":0.91,\"reference\":\"wanted:2024-12345\"}]},"
                 + "{\"image\":\"hall\",\"faces\":1,\"matches\":[]}]");
         WantedPersonReading door = assertInstanceOf(WantedPersonReading.class, r.get(0));
         assertEquals("wanted_person", door.booster());
         assertEquals(2, door.faces());
-        assertEquals(new WantedMatch(new FaceBox(10, 20, 110, 140), 0.91, "ref_00A1:7"), door.matches().get(0));
+        assertEquals(new WantedMatch(new FaceBox(10, 20, 110, 140), 0.91, "wanted:2024-12345"), door.matches().get(0));
         assertTrue(assertInstanceOf(WantedPersonReading.class, r.get(1)).matches().isEmpty());
     }
 
