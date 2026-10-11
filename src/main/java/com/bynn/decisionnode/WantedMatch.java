@@ -1,10 +1,10 @@
 package com.bynn.decisionnode;
 
 /**
- * One face a {@link WantedPersonReading} matched to an entry of the wanted-persons list.
+ * One entry of a {@link WantedPersonReading}'s matches.
  *
- * @param box       where the face is
- * @param score     how well the face matches the entry, 0 to 1
- * @param reference the list entry's reference id: an opaque id, never a name or any personal detail
+ * @param box       its box
+ * @param score     its {@code score}, as sent
+ * @param reference its {@code reference}, as sent
  */
 public record WantedMatch(FaceBox box, double score, String reference) {}

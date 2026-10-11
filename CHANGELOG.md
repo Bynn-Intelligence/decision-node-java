@@ -10,19 +10,10 @@ Implements version 1.3 of the DecisionNode SDK specification: boosters and fine-
 
 ### Added
 
-- A decision whose boosters name `ocr` (`decide`, the helpers and each `decideMany` request, in
+- A request naming the `ocr` booster (`decide`, the helpers and each `decideMany` request, in
   both forms) waits 30 s per attempt when no timeout was set; a timeout set on the client is used
   as given. Such a decision is never retried after a timeout, since the server may bill the
   timed-out attempt: the `TimeoutError` is raised. Its other retries stay.
-- `FaceDetectionReading` (`image`, `faces`, `detections`, each a `FaceDetection` with its `FaceBox`
-  and `confidence`) and `WantedPersonReading` (`image`, `faces`, `matches`, each a `WantedMatch`
-  with its `FaceBox`, `score` and `reference`), in the sealed `Reading` hierarchy, in the order
-  sent; a box's corners are kept as sent. A reading whose `faces` is not a whole number of at
-  least 0, whose list is missing, or whose entries lack a box corner, a number or a reference, is
-  an `UnknownReading`.
-- `OcrReading` (`image`, `text`, `truncated`, `raw`): the `ocr` booster's reading, the text a
-  picture shows (`""` when it shows none), in the sealed `Reading` hierarchy. A reading without a
-  string `text` or `image`, or without a boolean `truncated`, is an `UnknownReading`.
 - `Usage.cost()`: what an answer cost, as the API sends it, in a `Cost` record (`usd`,
   `modelUsd`, `boostersUsd`, `freeTier`, `raw`), on decisions, batch result lines and a session's
   open and frame replies; null when the answer does not carry it. `usd` is read as sent, never
@@ -79,23 +70,6 @@ and the point and box question types.
 
 ### Added
 
-- A decision whose boosters name `ocr` (`decide`, the helpers and each `decideMany` request, in
-  both forms) waits 30 s per attempt when no timeout was set; a timeout set on the client is used
-  as given. Such a decision is never retried after a timeout, since the server may bill the
-  timed-out attempt: the `TimeoutError` is raised. Its other retries stay.
-- `FaceDetectionReading` (`image`, `faces`, `detections`, each a `FaceDetection` with its `FaceBox`
-  and `confidence`) and `WantedPersonReading` (`image`, `faces`, `matches`, each a `WantedMatch`
-  with its `FaceBox`, `score` and `reference`), in the sealed `Reading` hierarchy, in the order
-  sent; a box's corners are kept as sent. A reading whose `faces` is not a whole number of at
-  least 0, whose list is missing, or whose entries lack a box corner, a number or a reference, is
-  an `UnknownReading`.
-- `OcrReading` (`image`, `text`, `truncated`, `raw`): the `ocr` booster's reading, the text a
-  picture shows (`""` when it shows none), in the sealed `Reading` hierarchy. A reading without a
-  string `text` or `image`, or without a boolean `truncated`, is an `UnknownReading`.
-- `Usage.cost()`: what an answer cost, as the API sends it, in a `Cost` record (`usd`,
-  `modelUsd`, `boostersUsd`, `freeTier`, `raw`), on decisions, batch result lines and a session's
-  open and frame replies; null when the answer does not carry it. `usd` is read as sent, never
-  summed from its parts.
 - Point and box questions: `Questions.point` and `Questions.box`, each with an optional image id
   and units (`pixels` or `normalized`), and the answers `PointAnswer` (`x`, `y`, `present`,
   `confidence`, `image`, `width`, `height`) and `BoxAnswer` (`x1`, `y1`, `x2`, `y2` and the
