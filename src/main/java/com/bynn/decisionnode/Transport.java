@@ -36,7 +36,12 @@ final class Transport {
          */
         MUTATION,
         /** As {@link #DEFAULT}, except that a 429 {@code session_limit_exceeded} is never retried. */
-        SESSION_OPEN
+        SESSION_OPEN,
+        /**
+         * A decision whose boosters name {@code ocr}: as {@link #DEFAULT}, except that a timeout is
+         * never retried, since the server finishes the timed-out attempt and may bill it.
+         */
+        OCR
     }
 
     record Response(int status, HttpHeaders headers, Map<String, Object> object) {}
@@ -57,20 +62,26 @@ final class Transport {
         return ex;
     }
 
+    /** The default per-attempt timeout of a decision naming {@code ocr}, when the caller set none. */
+    static final Duration OCR_TIMEOUT = Duration.ofSeconds(30);
+
     final String apiKey;
     final String baseUrl;
     final Duration timeout;
+    /** True when the caller set {@link #timeout}; false when it is the default. */
+    final boolean timeoutSet;
     final int maxRetries;
     final Map<String, String> headers;
     final HttpClient http;
     final boolean plainHttp;
     private final Function<Long, CompletableFuture<Void>> waiter;
 
-    Transport(String apiKey, String baseUrl, Duration timeout, int maxRetries, Map<String, String> headers,
-            HttpClient http, Function<Long, CompletableFuture<Void>> waiter) {
+    Transport(String apiKey, String baseUrl, Duration timeout, boolean timeoutSet, int maxRetries,
+            Map<String, String> headers, HttpClient http, Function<Long, CompletableFuture<Void>> waiter) {
         this.apiKey = apiKey;
         this.baseUrl = baseUrl;
         this.timeout = timeout;
+        this.timeoutSet = timeoutSet;
         this.maxRetries = maxRetries;
         this.headers = headers;
         this.http = http;
@@ -92,18 +103,40 @@ final class Transport {
     // ------------------------------------------------------------------ JSON calls
 
     CompletableFuture<Response> json(String method, String path, byte[] body, Policy policy) {
-        return call(method, path, body, "application/json", policy);
+        return call(method, path, body, "application/json", policy, timeout);
     }
 
-    /** One call whose success is a JSON object. */
+    /**
+     * A decision: a request whose boosters name {@code ocr} waits {@link #OCR_TIMEOUT} per attempt
+     * unless the caller set a timeout (used as given, even below it), and is never retried after a
+     * timeout.
+     */
+    CompletableFuture<Response> decision(String path, byte[] body, boolean namesOcr) {
+        if (!namesOcr) {
+            return json("POST", path, body, Policy.DEFAULT);
+        }
+        return call("POST", path, body, "application/json", Policy.OCR, decisionTimeout(true));
+    }
+
+    /** The per-attempt timeout of a decision: 30 s for one naming ocr unless the caller set one. */
+    Duration decisionTimeout(boolean namesOcr) {
+        return namesOcr && !timeoutSet ? OCR_TIMEOUT : timeout;
+    }
+
     CompletableFuture<Response> call(String method, String path, byte[] body, String contentType, Policy policy) {
+        return call(method, path, body, contentType, policy, timeout);
+    }
+
+    /** One call whose success is a JSON object, each attempt within {@code limit}. */
+    private CompletableFuture<Response> call(String method, String path, byte[] body, String contentType, Policy policy,
+            Duration limit) {
         HttpRequest request;
         try {
-            request = request(method, path, body, contentType, "application/json");
+            request = request(method, path, body, contentType, "application/json", limit);
         } catch (RuntimeException e) {
             return CompletableFuture.failedFuture(e);
         }
-        return this.<byte[]>attempt(request, 0, policy, HttpResponse.BodySubscribers::ofByteArray)
+        return this.<byte[]>attempt(request, 0, policy, limit, HttpResponse.BodySubscribers::ofByteArray)
                 .thenApply(r -> {
                     Map<String, Object> obj;
                     try {
@@ -126,20 +159,21 @@ final class Transport {
     CompletableFuture<HttpResponse<Stream<String>>> lines(String path) {
         HttpRequest request;
         try {
-            request = request("GET", path, null, null, "application/x-ndjson");
+            request = request("GET", path, null, null, "application/x-ndjson", timeout);
         } catch (RuntimeException e) {
             return CompletableFuture.failedFuture(e);
         }
-        return this.attempt(request, 0, Policy.DEFAULT,
+        return this.attempt(request, 0, Policy.DEFAULT, timeout,
                 () -> new IdleTimeout<>(HttpResponse.BodySubscribers.ofLines(java.nio.charset.StandardCharsets.UTF_8), timeout, DEADLINES));
     }
 
-    private HttpRequest request(String method, String path, byte[] body, String contentType, String accept) {
+    private HttpRequest request(String method, String path, byte[] body, String contentType, String accept,
+            Duration limit) {
         if (apiKey == null || apiKey.isEmpty()) {
             throw new AuthenticationError("no API key: pass one to the client or set DECISIONNODE_API_KEY");
         }
         HttpRequest.Builder rb = HttpRequest.newBuilder(URI.create(baseUrl + path))
-                .timeout(timeout)
+                .timeout(limit)
                 .header("Authorization", "Bearer " + apiKey)
                 .header("User-Agent", USER_AGENT)
                 .header("Accept", accept);
@@ -159,7 +193,7 @@ final class Transport {
      * One attempt, then the retries the policy allows. A 2xx body is read with {@code ok}; any
      * other status is read whole and becomes the error its status gives.
      */
-    private <T> CompletableFuture<HttpResponse<T>> attempt(HttpRequest request, int attempt, Policy policy,
+    private <T> CompletableFuture<HttpResponse<T>> attempt(HttpRequest request, int attempt, Policy policy, Duration limit,
             java.util.function.Supplier<HttpResponse.BodySubscriber<T>> okBody) {
         long started = System.nanoTime();
         CompletableFuture<HttpResponse<Object>> sent;
@@ -184,18 +218,18 @@ final class Transport {
                 expired.set(true);
                 exchange.cancel(true);
             }
-        }, timeout.toNanos(), TimeUnit.NANOSECONDS);
+        }, limit.toNanos(), TimeUnit.NANOSECONDS);
         return sent.handle((resp, exc) -> {
             deadline.cancel(false);
             long ms = TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - started);
             if (exc != null) {
                 Throwable cause = unwrap(exc);
                 DecisionNodeError err = expired.get() && !(cause instanceof HttpTimeoutException)
-                        ? new TimeoutError("no complete response within " + timeout.toMillis() + " ms", cause)
-                        : transportError(cause);
+                        ? new TimeoutError("no complete response within " + limit.toMillis() + " ms", cause)
+                        : transportError(cause, limit);
                 debug(request, null, null, ms, attempt, err.getMessage());
-                if (policy != Policy.MUTATION && retryable(err) && attempt < maxRetries) {
-                    return sleep(millis(backoff(attempt))).thenCompose(v -> attempt(request, attempt + 1, policy, okBody));
+                if (policy != Policy.MUTATION && retryable(policy, err) && attempt < maxRetries) {
+                    return sleep(millis(backoff(attempt))).thenCompose(v -> attempt(request, attempt + 1, policy, limit, okBody));
                 }
                 return CompletableFuture.<HttpResponse<T>>failedFuture(err);
             }
@@ -209,7 +243,8 @@ final class Transport {
             DecisionNodeError err = Responses.error(status, resp.headers(), (byte[]) resp.body());
             if (retryable(policy, status, err) && attempt < maxRetries) {
                 Double wait = Responses.retryAfter(resp.headers());
-                return sleep(millis(wait != null ? wait : backoff(attempt))).thenCompose(v -> attempt(request, attempt + 1, policy, okBody));
+                return sleep(millis(wait != null ? wait : backoff(attempt)))
+                        .thenCompose(v -> attempt(request, attempt + 1, policy, limit, okBody));
             }
             return CompletableFuture.<HttpResponse<T>>failedFuture(err);
         }).thenCompose(Function.identity());
@@ -234,16 +269,21 @@ final class Transport {
         }
     }
 
-    private static boolean retryable(DecisionNodeError e) {
-        return e instanceof TimeoutError || e instanceof ConnectionError;
+    /** A failure without a response: a timeout (never for a decision naming ocr) or a connection error. */
+    private static boolean retryable(Policy policy, DecisionNodeError e) {
+        return (e instanceof TimeoutError && policy != Policy.OCR) || e instanceof ConnectionError;
     }
 
     DecisionNodeError transportError(Throwable t) {
+        return transportError(t, timeout);
+    }
+
+    private DecisionNodeError transportError(Throwable t, Duration limit) {
         if (t instanceof DecisionNodeError) {
             return (DecisionNodeError) t;
         }
         if (t instanceof HttpTimeoutException) {
-            return new TimeoutError("no response within " + timeout.toMillis() + " ms", t);
+            return new TimeoutError("no response within " + limit.toMillis() + " ms", t);
         }
         if (t instanceof IOException) {
             return new ConnectionError("connection error: " + t, t);

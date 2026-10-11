@@ -142,7 +142,7 @@ public final class DecisionNode {
             // TLS must check certificates and hostnames, or https protects nothing.
             TransportCheck.checkTls(b.httpClient);
         }
-        this.transport = new Transport(apiKey, baseUrl, timeout, maxRetries, headers, http,
+        this.transport = new Transport(apiKey, baseUrl, timeout, b.timeout != null, maxRetries, headers, http,
                 b.waiter != null ? b.waiter : Transport::delay);
         this.uploads = new Uploads(transport, inlineThreshold, b.uploadTimeout == null ? DEFAULT_UPLOAD_TIMEOUT : b.uploadTimeout,
                 b.clock != null ? b.clock : System::currentTimeMillis);
@@ -455,7 +455,7 @@ public final class DecisionNode {
      */
     private CompletableFuture<Transport.Response> send(Plan plan) {
         CompletableFuture<Transport.Response> first = plan.payload() != null
-                ? transport.json("POST", plan.path(), plan.payload(), Transport.Policy.DEFAULT)
+                ? transport.decision(plan.path(), plan.payload(), Booster.namesOcr(plan.head().get("boosters")))
                         .exceptionallyCompose(err -> CompletableFuture.failedFuture(stale(err, plan.placed())))
                 : sendWithImages(plan);
         return first.exceptionallyCompose(err -> {
@@ -476,7 +476,7 @@ public final class DecisionNode {
         return uploads.wires(plan.images(), true, false).thenCompose(w -> {
             Map<String, Object> body = new LinkedHashMap<>(plan.head());
             body.put("images", w.wires());
-            return transport.json("POST", plan.path(), Json.write(body), Transport.Policy.DEFAULT)
+            return transport.decision(plan.path(), Json.write(body), Booster.namesOcr(plan.head().get("boosters")))
                     .exceptionallyCompose(err -> CompletableFuture.failedFuture(stale(err, w.placed())));
         });
     }
@@ -1287,7 +1287,10 @@ public final class DecisionNode {
 
         /**
          * The time allowed for each attempt, from sending the request to the last byte of the
-         * response body. Default: 10 seconds.
+         * response body. Default: 10 seconds, and 30 seconds for a decision whose boosters name
+         * {@code ocr}. A timeout set here is used as given for every call, an {@code ocr} decision's
+         * included (set at least 30 seconds for those). A decision naming {@code ocr} is never
+         * retried after a timeout, since the server finishes the timed-out attempt and may bill it.
          *
          * @throws IllegalArgumentException when it is not above 0
          */

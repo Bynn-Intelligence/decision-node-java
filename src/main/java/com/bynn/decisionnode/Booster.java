@@ -124,6 +124,24 @@ public final class Booster {
     }
 
     /** The wire form of the entries of a {@code boosters} list: a name as itself, a map as given. */
+    /**
+     * True when a body's {@code boosters} (their wire forms) name {@code ocr}, by its bare name or
+     * in the object form: such a decision waits longer and is never retried after a timeout.
+     */
+    static boolean namesOcr(Object boosters) {
+        List<Object> list = Json.asList(boosters);
+        if (list == null) {
+            return false;
+        }
+        for (Object b : list) {
+            Map<String, Object> m = Json.asMap(b);
+            if ("ocr".equals(b) || (m != null && "ocr".equals(m.get("name")))) {
+                return true;
+            }
+        }
+        return false;
+    }
+
     static List<Object> wires(List<Object> boosters) {
         List<Object> out = new ArrayList<>(boosters.size());
         for (int i = 0; i < boosters.size(); i++) {

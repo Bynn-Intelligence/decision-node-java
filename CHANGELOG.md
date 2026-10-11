@@ -10,6 +10,10 @@ Implements version 1.3 of the DecisionNode SDK specification: boosters and fine-
 
 ### Added
 
+- A decision whose boosters name `ocr` (`decide`, the helpers and each `decideMany` request, in
+  both forms) waits 30 s per attempt when no timeout was set; a timeout set on the client is used
+  as given. Such a decision is never retried after a timeout, since the server may bill the
+  timed-out attempt: the `TimeoutError` is raised. Its other retries stay.
 - `FaceDetectionReading` (`image`, `faces`, `detections`, each a `FaceDetection` with its `FaceBox`
   and `confidence`) and `WantedPersonReading` (`image`, `faces`, `matches`, each a `WantedMatch`
   with its `FaceBox`, `score` and `reference`), in the sealed `Reading` hierarchy, in the order
@@ -75,6 +79,10 @@ and the point and box question types.
 
 ### Added
 
+- A decision whose boosters name `ocr` (`decide`, the helpers and each `decideMany` request, in
+  both forms) waits 30 s per attempt when no timeout was set; a timeout set on the client is used
+  as given. Such a decision is never retried after a timeout, since the server may bill the
+  timed-out attempt: the `TimeoutError` is raised. Its other retries stay.
 - `FaceDetectionReading` (`image`, `faces`, `detections`, each a `FaceDetection` with its `FaceBox`
   and `confidence`) and `WantedPersonReading` (`image`, `faces`, `matches`, each a `WantedMatch`
   with its `FaceBox`, `score` and `reference`), in the sealed `Reading` hierarchy, in the order

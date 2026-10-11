@@ -697,6 +697,13 @@ certificate or hostname checks (see Your own HttpClient). These are never wrappe
   connection errors. The wait is the server's `retry-after-ms`, else `Retry-After` in seconds
   or as an HTTP date, capped at 60 s; without one, an exponential backoff from 0.5 s with
   jitter, capped at 8 s. A decision changes nothing on the server, so a retry is always safe.
+- A decision whose boosters name `ocr` (by name or as a `Booster`) reads text in its pictures
+  before the model answers, which can take several seconds a picture, so it waits 30 seconds per
+  attempt when you set no timeout. A timeout you set is used as given; set at least 30 seconds
+  for such requests. It is never retried after a timeout, because the server finishes the
+  timed-out attempt and may bill it: the client raises the `TimeoutError`. Its other retries
+  stay. This covers `decide`, the helpers and each `decideMany` request, not sessions, batches or
+  `decideRaw`.
 - 400, 401, 402, 403, 404 and 422 are never retried.
 - Batch `create`, `add` and `finalize` are retried only on 429 and 529, and opening a session is
   never retried on `session_limit_exceeded`; see their sections.
