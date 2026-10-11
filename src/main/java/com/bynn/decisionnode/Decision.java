@@ -130,7 +130,10 @@ public final class Decision {
         return model;
     }
 
-    /** The tokens this decision used and, for a request with videos, the frames and seconds read. */
+    /**
+     * The tokens this decision used, for a request with videos the frames and seconds read, and
+     * what the answer cost ({@link Usage#cost()}).
+     */
     public Usage usage() {
         return usage;
     }

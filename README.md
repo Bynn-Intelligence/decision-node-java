@@ -135,9 +135,16 @@ fields are missing or of the wrong type; the rest of the decision is read as usu
 
 Numbers are exactly what the API sent: no rounding and no renormalising.
 
-A `Decision` also carries `model()` (the version that answered), `usage()`, `requestId()`,
-`latencyMs()`, `safety()`, `warnings()`, `evidence()` (see Boosters), `fallback()` (see Fallback)
-and `raw()`, the parsed body.
+A `Decision` also carries `model()` (the pinned id of the release that answered), `usage()`,
+`requestId()`, `latencyMs()`, `safety()`, `warnings()`, `evidence()` (see Boosters), `fallback()`
+(see Fallback) and `raw()`, the parsed body.
+
+`usage().cost()` is what the answer cost, in USD, exactly as the API sent it: `usd()` (the amount
+booked for this answer, at your workspace's rates), `modelUsd()` and `boostersUsd()` (its two
+parts) and `freeTier()` (true when the free tier covered the request, `modelUsd()` then 0). Read
+`usd()` as the total; it is never computed from the parts, since adding doubles can differ from
+the booked amount in the last digits. A batch result line and a session's open and frame replies
+carry their own. It is null when the answer does not carry a cost.
 
 ## The client
 

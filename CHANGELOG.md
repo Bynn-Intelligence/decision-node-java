@@ -10,6 +10,10 @@ Implements version 1.3 of the DecisionNode SDK specification: boosters and fine-
 
 ### Added
 
+- `Usage.cost()`: what an answer cost, as the API sends it, in a `Cost` record (`usd`,
+  `modelUsd`, `boostersUsd`, `freeTier`, `raw`), on decisions, batch result lines and a session's
+  open and frame replies; null when the answer does not carry it. `usd` is read as sent, never
+  summed from its parts.
 - Boosters: `DecideRequest.Builder.booster(name)`, `booster(Booster)` and `boosters(list)`, with
   `Booster.of(name)` and its `images`, `require` and `options` settings (a name or a wire-form map
   is accepted too), on `BatchRequest`, `decideMany`, and as a `boosters` argument of `decide`,
@@ -62,6 +66,10 @@ and the point and box question types.
 
 ### Added
 
+- `Usage.cost()`: what an answer cost, as the API sends it, in a `Cost` record (`usd`,
+  `modelUsd`, `boostersUsd`, `freeTier`, `raw`), on decisions, batch result lines and a session's
+  open and frame replies; null when the answer does not carry it. `usd` is read as sent, never
+  summed from its parts.
 - Point and box questions: `Questions.point` and `Questions.box`, each with an optional image id
   and units (`pixels` or `normalized`), and the answers `PointAnswer` (`x`, `y`, `present`,
   `confidence`, `image`, `width`, `height`) and `BoxAnswer` (`x1`, `y1`, `x2`, `y2` and the

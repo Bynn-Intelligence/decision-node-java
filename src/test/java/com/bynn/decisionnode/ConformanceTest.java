@@ -56,7 +56,7 @@ import org.junit.jupiter.api.TestFactory;
 @Tag("conformance")
 class ConformanceTest {
     private static final String[] KINDS = {"requests", "responses", "errors", "behaviour", "constants"};
-    private static final Set<String> EXACT = Set.of("probabilities", "legend", "raw", "entries", "safety", "body", "limits", "evidence", "boosters", "fallback");
+    private static final Set<String> EXACT = Set.of("probabilities", "legend", "raw", "entries", "safety", "body", "limits", "evidence", "boosters", "fallback", "cost");
     /** Keys compared whole whose map keys must also come in the expected order. */
     private static final Set<String> ORDERED = Set.of("evidence", "boosters");
     private static final Pattern UPLOAD_ID = Pattern.compile("upl_[0-9a-f]{32}");
@@ -945,6 +945,17 @@ class ConformanceTest {
         usage.put("video_seconds", d.usage().videoSeconds());
         usage.put("booster_tokens", d.usage().boosterTokens());
         usage.put("boosters", d.usage().boosters());
+        Cost cost = d.usage().cost();
+        if (cost == null) {
+            usage.put("cost", null);
+        } else {
+            Map<String, Object> c = new LinkedHashMap<>();
+            c.put("usd", cost.usd());
+            c.put("model_usd", cost.modelUsd());
+            c.put("boosters_usd", cost.boostersUsd());
+            c.put("free_tier", cost.freeTier());
+            usage.put("cost", c);
+        }
         n.put("usage", usage);
         n.put("evidence", normEvidence(d.evidence()));
         if (d.fallback() == null) {

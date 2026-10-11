@@ -241,7 +241,19 @@ final class Responses {
                 ? new Usage(null, null)
                 : new Usage(Json.asLong(usage.get("input_tokens")), Json.asLong(usage.get("output_tokens")),
                         Json.asLong(usage.get("video_frames")), Json.asDouble(usage.get("video_seconds")),
-                        Json.asLong(usage.get("booster_tokens")), Json.asLong(usage.get("boosters")));
+                        Json.asLong(usage.get("booster_tokens")), Json.asLong(usage.get("boosters")),
+                        cost(Json.asMap(usage.get("cost"))));
+    }
+
+    /** {@code usage.cost}, every amount as sent and never summed; null when absent. */
+    static Cost cost(Map<String, Object> cost) {
+        if (cost == null) {
+            return null;
+        }
+        Object free = cost.get("free_tier");
+        return new Cost(Json.asDouble(cost.get("usd")), Json.asDouble(cost.get("model_usd")),
+                Json.asDouble(cost.get("boosters_usd")), free instanceof Boolean b ? b : null,
+                Collections.unmodifiableMap(cost));
     }
 
     /**
