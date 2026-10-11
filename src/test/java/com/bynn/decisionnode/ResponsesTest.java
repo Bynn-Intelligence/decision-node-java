@@ -99,7 +99,7 @@ class ResponsesTest {
 
     @Test
     void answersKeepNumbersAsSent() throws Exception {
-        Decision d = decision("{\"model\":\"decisionnode-1.0\",\"answers\":{"
+        Decision d = decision("{\"model\":\"decisionnode-moe-0.9.0-rc1\",\"answers\":{"
                 + "\"c\":{\"type\":\"choice\",\"choice\":\"\",\"confidence\":0.64,\"probabilities\":{\"\":0.8200000000000001,\"b\":0.18}},"
                 + "\"s\":{\"type\":\"score\",\"score\":1.7,\"confidence\":0.45,\"legend\":{\"0\":\"low\",\"1\":{\"what\":\"high\"}},"
                 + "\"probabilities\":{\"0\":0.060000000000000005,\"1\":0.94}},"
@@ -119,22 +119,22 @@ class ResponsesTest {
         assertEquals("req_9", d.requestId());
         assertEquals(23.0, d.latencyMs());
         assertNull(d.safety());
-        assertEquals("decisionnode-1.0", d.model());
+        assertEquals("decisionnode-moe-0.9.0-rc1", d.model());
     }
 
     @Test
     void modelsSplitLimits() throws Exception {
         List<ModelInfo> models = Responses.models(Json.asMap(Json.read(
-                "{\"models\":[{\"name\":\"decisionnode-1.0\",\"description\":\"d\",\"release_date\":\"2026-10-01\",\"max_images\":4}]}"
+                "{\"models\":[{\"name\":\"decisionnode-moe\",\"description\":\"d\",\"release_date\":\"2026-10-01\",\"max_images\":4}]}"
                         .getBytes(StandardCharsets.UTF_8))));
-        assertEquals("decisionnode-1.0", models.get(0).name());
+        assertEquals("decisionnode-moe", models.get(0).name());
         assertEquals("2026-10-01", models.get(0).releaseDate());
         assertEquals(Map.of("max_images", 4), models.get(0).limits());
     }
 
     @Test
     void malformedKnownAnswersAreUnknown() throws Exception {
-        Decision d = decision("{\"model\":\"decisionnode-1.0\",\"answers\":{"
+        Decision d = decision("{\"model\":\"decisionnode-moe-0.9.0-rc1\",\"answers\":{"
                 + "\"t1\":{\"type\":\"truth\"},"
                 + "\"t2\":{\"type\":\"truth\",\"truth\":\"0.9\"},"
                 + "\"c1\":{\"type\":\"choice\",\"choice\":null,\"confidence\":0.5,\"probabilities\":{\"a\":1}},"

@@ -1715,6 +1715,10 @@ class ConformanceTest {
 
     /** JSON equality: numbers compared exactly as doubles, booleans apart from numbers, maps by key. */
     static boolean same(Object a, Object b) {
+        // {"$pattern": regex} in an expectation matches any string the regex finds (suite 1.11).
+        if (a instanceof Map<?, ?> p && p.size() == 1 && p.get("$pattern") instanceof String regex) {
+            return b instanceof String text && java.util.regex.Pattern.compile(regex).matcher(text).find();
+        }
         if (a == null || b == null) {
             return a == b;
         }

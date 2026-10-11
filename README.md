@@ -414,8 +414,8 @@ DecideRequest.builder()
 ## Fine-tuned models
 
 A model your workspace fine-tuned in the console is called by its name in `model`, by the keys of
-that workspace: `decisionnode-1.0-flash@acme/fraud` runs the version deployed most recently, and
-`decisionnode-1.0-flash@acme/fraud:3` pins version 3. It answers like its base: the same question
+that workspace: `decisionnode-flash@acme/fraud` runs the version deployed most recently, and
+`decisionnode-flash@acme/fraud:3` pins version 3. It answers like its base: the same question
 types, answers, limits and errors. The answer's `model()` is always the pinned name, so you can log
 which version answered. A name that does not exist, is not deployed or belongs to another
 workspace is the API's `BadRequestError` "Unknown model: <name>"; the SDK sends the name as given.
@@ -428,15 +428,15 @@ has them null.
 Decision d = dn.decide(DecideRequest.builder()
     .state(claim)
     .question("fraud", truth("Is this claim fraudulent?"))
-    .model("decisionnode-1.0-flash@acme/fraud")
+    .model("decisionnode-flash@acme/fraud")
     .build());
-d.model();   // "decisionnode-1.0-flash@acme/fraud:3"
+d.model();   // "decisionnode-flash@acme/fraud:3"
 ```
 
 ## Fallback
 
-When no worker of `decisionnode-1.0` can take a request at once, the API answers it from
-`decisionnode-1.0-flash` instead of making it wait. Such an answer says so: `Decision.fallback()`
+When no worker of `decisionnode-moe` can take a request at once, the API answers it from
+`decisionnode-flash` instead of making it wait. Such an answer says so: `Decision.fallback()`
 holds `servedModel()` (the model that answered) and `requestedModel()` (the model asked for), and
 `model()` is the model that answered. On an ordinary answer `fallback()` is null.
 
@@ -447,7 +447,7 @@ asked for, or refused with an `OverloadedError` (a 529), which the client retrie
 Decision d = dn.decide(DecideRequest.builder()
     .state(ticket)
     .question("escalate", truth("Escalate to a human now?"))
-    .model("decisionnode-1.0")
+    .model("decisionnode-moe")
     .fallback(false)
     .build());
 ```
@@ -706,7 +706,7 @@ certificate or hostname checks (see Your own HttpClient). These are never wrappe
 DecisionNode dn = DecisionNode.builder()
     .apiKey("dn_...")                          // default: DECISIONNODE_API_KEY
     .baseUrl("https://api.decisionnode.com")   // default: DECISIONNODE_BASE_URL, else this
-    .model("decisionnode-flash-latest")        // default: DECISIONNODE_MODEL, else decisionnode-latest
+    .model("decisionnode-flash")               // default: DECISIONNODE_MODEL, else decisionnode-moe
     .timeout(Duration.ofSeconds(10))           // per attempt, above 0
     .maxRetries(2)                             // 0 or more
     .inlineThreshold(524_288)                  // bytes; local images under it go inline
@@ -727,10 +727,13 @@ model)`, the helpers' `model` argument or `DecideRequest.builder().model(...)`.
 
 | Model | |
 |---|---|
-| `decisionnode-latest` | The latest model (default) |
-| `decisionnode-flash-latest` | The latest fast, lower-cost model |
-| `decisionnode-1.0`, `decisionnode-1.0-flash` | Pinned versions |
-| `decisionnode-1.0-flash@acme/fraud`, `...:3` | Your workspace's fine-tuned models (see Fine-tuned models) |
+| `decisionnode-moe` | The most accurate model, always its current release (default) |
+| `decisionnode-flash` | The fast, lower-cost model, always its current release |
+| `decisionnode-<family>-<version>` | One release pinned: `models()` lists the pinned ids your key may use |
+| `decisionnode-flash@acme/fraud`, `...:3` | Your workspace's fine-tuned models (see Fine-tuned models) |
+
+Every answer's `model()` is the pinned id of the release that answered, so you can log which
+release answered a request sent to a family.
 
 ### Your own HttpClient
 

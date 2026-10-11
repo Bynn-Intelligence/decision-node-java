@@ -28,7 +28,7 @@ import org.junit.jupiter.api.Test;
 
 /** Boosters on requests, evidence and usage on decisions, the boosters header on errors, fine-tuned models. */
 class BoostersTest {
-    private static final String OK = "{\"model\":\"decisionnode-1.0\",\"answers\":{\"q\":{\"type\":\"truth\",\"truth\":0.5}},"
+    private static final String OK = "{\"model\":\"decisionnode-moe-0.9.0-rc1\",\"answers\":{\"q\":{\"type\":\"truth\",\"truth\":0.5}},"
             + "\"usage\":{\"input_tokens\":5,\"output_tokens\":0}}";
 
     record Reply(int status, Map<String, String> headers, String body) {}
@@ -112,12 +112,12 @@ class BoostersTest {
                 .booster("age")
                 .booster(Booster.of("ai_generated").images("c3d4").require(true))
                 .boosters(List.of(wire))
-                .model("decisionnode-1.0-flash@acme/fraud:3")
+                .model("decisionnode-flash@acme/fraud:3")
                 .build());
         Map<String, Object> body = lastBody();
         assertEquals(List.of("age", Map.of("name", "ai_generated", "images", List.of("c3d4"), "require", true),
                 Map.of("name", "custom", "options", Map.of("level", 2))), body.get("boosters"));
-        assertEquals("decisionnode-1.0-flash@acme/fraud:3", body.get("model"));
+        assertEquals("decisionnode-flash@acme/fraud:3", body.get("model"));
     }
 
     @Test
@@ -186,7 +186,7 @@ class BoostersTest {
 
     @Test
     void evidenceIsReadByBoosterInOrder() throws IOException {
-        Decision d = decision("{\"model\":\"decisionnode-1.0\",\"answers\":{\"adult\":{\"type\":\"truth\",\"truth\":0.97}},"
+        Decision d = decision("{\"model\":\"decisionnode-moe-0.9.0-rc1\",\"answers\":{\"adult\":{\"type\":\"truth\",\"truth\":0.97}},"
                 + "\"evidence\":{"
                 + "\"age\":{\"version\":\"age-v3\",\"status\":\"ok\",\"latency_ms\":212,\"billed_calls\":2,\"results\":["
                 + "{\"image\":\"a1b2\",\"age_years\":27,\"low\":22,\"high\":33,\"confidence\":0.81,\"faces\":1},"
@@ -293,19 +293,19 @@ class BoostersTest {
 
     @Test
     void aPinnedFineTunedNameIsTheModel() throws IOException {
-        Decision d = decision("{\"model\":\"decisionnode-1.0-flash@acme/fraud:3\",\"answers\":{}}");
-        assertEquals("decisionnode-1.0-flash@acme/fraud:3", d.model());
+        Decision d = decision("{\"model\":\"decisionnode-flash@acme/fraud:3\",\"answers\":{}}");
+        assertEquals("decisionnode-flash@acme/fraud:3", d.model());
     }
 
     @Test
     void modelsCarryTheFineTunedFields() {
         handler = s -> new Reply(200, Map.of(), "{\"models\":["
-                + "{\"name\":\"decisionnode-1.0-flash\",\"description\":\"Fast\",\"release_date\":\"2026-10-01\",\"version\":\"decisionnode-1.0-flash\",\"max_images\":16},"
-                + "{\"name\":\"decisionnode-1.0-flash@acme/fraud:3\",\"description\":\"Claims fraud\",\"release_date\":\"2026-10-09\","
-                + "\"version\":\"decisionnode-1.0-flash@acme/fraud:3\",\"fine_tuned\":true,\"base\":\"decisionnode-1.0-flash\","
+                + "{\"name\":\"decisionnode-flash\",\"description\":\"Fast\",\"release_date\":\"2026-10-01\",\"version\":\"decisionnode-flash-0.9.0-rc1\",\"alias\":\"decisionnode-flash\",\"max_images\":16},"
+                + "{\"name\":\"decisionnode-flash@acme/fraud:3\",\"description\":\"Claims fraud\",\"release_date\":\"2026-10-09\","
+                + "\"version\":\"decisionnode-flash@acme/fraud:3\",\"fine_tuned\":true,\"base\":\"decisionnode-flash-0.9.0-rc1\","
                 + "\"adapter_version\":3,\"status\":\"deployed\"},"
-                + "{\"name\":\"decisionnode-1.0-flash@acme/fraud:4\",\"description\":\"Claims fraud\",\"release_date\":\"2026-10-09\","
-                + "\"fine_tuned\":true,\"base\":\"decisionnode-1.0-flash\",\"adapter_version\":4,\"status\":\"ready\"}]}");
+                + "{\"name\":\"decisionnode-flash@acme/fraud:4\",\"description\":\"Claims fraud\",\"release_date\":\"2026-10-09\","
+                + "\"fine_tuned\":true,\"base\":\"decisionnode-flash-0.9.0-rc1\",\"adapter_version\":4,\"status\":\"ready\"}]}");
         List<ModelInfo> models = client().models();
         ModelInfo catalogue = models.get(0);
         assertNull(catalogue.fineTuned());
@@ -314,10 +314,10 @@ class BoostersTest {
         assertNull(catalogue.status());
         ModelInfo deployed = models.get(1);
         assertEquals(true, deployed.fineTuned());
-        assertEquals("decisionnode-1.0-flash", deployed.base());
+        assertEquals("decisionnode-flash-0.9.0-rc1", deployed.base());
         assertEquals(3L, deployed.adapterVersion());
         assertEquals("deployed", deployed.status());
-        assertEquals("decisionnode-1.0-flash@acme/fraud:3", deployed.limits().get("version"));
+        assertEquals("decisionnode-flash@acme/fraud:3", deployed.limits().get("version"));
         assertEquals("ready", models.get(2).status());
         assertEquals(4L, models.get(2).adapterVersion());
     }

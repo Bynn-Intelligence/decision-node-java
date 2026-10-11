@@ -48,6 +48,10 @@ Implements version 1.3 of the DecisionNode SDK specification: boosters and fine-
 
 ### Changed
 
+- The default model is `decisionnode-moe` (it was `decisionnode-latest`). The documentation and
+  examples use the family ids `decisionnode-moe` and `decisionnode-flash`, which always mean the
+  current release; an answer's `model()` is the pinned id that answered, and `models()` lists
+  the pinned ids. `model` stays free text, so a pinned id from `models()` is sent as given.
 - `SPEC_VERSION` is `"1.3"`.
 - The 128-level nesting check counts the `boosters` list and its `options`.
 

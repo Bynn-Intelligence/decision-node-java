@@ -25,7 +25,7 @@ import org.junit.jupiter.api.Test;
 
 /** The fallback option on requests and the fallback headers on decisions. */
 class FallbackTest {
-    private static final String OK = "{\"model\":\"decisionnode-1.0\",\"answers\":{\"q\":{\"type\":\"truth\",\"truth\":0.5}},"
+    private static final String OK = "{\"model\":\"decisionnode-moe-0.9.0-rc1\",\"answers\":{\"q\":{\"type\":\"truth\",\"truth\":0.5}},"
             + "\"usage\":{\"input_tokens\":5,\"output_tokens\":0}}";
 
     record Reply(int status, Map<String, String> headers, String body) {}
@@ -86,7 +86,7 @@ class FallbackTest {
         assertFalse(lastBody().containsKey("fallback"));
         dn.decide(DecideRequest.builder().state("s").question("q", truth("?")).fallback(false).build());
         assertEquals(false, lastBody().get("fallback"));
-        dn.decide("s", Map.of("q", truth("?")), null, null, "decisionnode-1.0", null, true);
+        dn.decide("s", Map.of("q", truth("?")), null, null, "decisionnode-moe", null, true);
         assertEquals(true, lastBody().get("fallback"));
         dn.decideMany(List.of(DecideRequest.builder().state("s").question("q", truth("?")).fallback(false).build()));
         assertEquals(false, lastBody().get("fallback"));
@@ -97,10 +97,10 @@ class FallbackTest {
     @Test
     void helpersTakeFallback() throws IOException {
         handler = s -> new Reply(200, Map.of(), "{\"answers\":{\"check\":{\"type\":\"truth\",\"truth\":0.9}}}");
-        client().check("s", "Refund?", null, null, null, null, "decisionnode-1.0", null, false);
+        client().check("s", "Refund?", null, null, null, null, "decisionnode-moe", null, false);
         Map<String, Object> body = lastBody();
         assertEquals(false, body.get("fallback"));
-        assertEquals("decisionnode-1.0", body.get("model"));
+        assertEquals("decisionnode-moe", body.get("model"));
         client().check("s", "Refund?", null, null, null, null, null, null);
         assertFalse(lastBody().containsKey("fallback"));
         handler = s -> new Reply(200, Map.of(), OK);
@@ -110,14 +110,14 @@ class FallbackTest {
 
     @Test
     void aFallbackAnswerNamesBothModels() throws IOException {
-        Decision d = decision(OK.replace("decisionnode-1.0", "decisionnode-1.0-flash"),
-                "x-decisionnode-fallback", "decisionnode-1.0-flash",
-                "x-decisionnode-requested-model", "decisionnode-1.0");
-        assertEquals(new Fallback("decisionnode-1.0-flash", "decisionnode-1.0"), d.fallback());
-        assertEquals("decisionnode-1.0-flash", d.model());
+        Decision d = decision(OK.replace("decisionnode-moe-0.9.0-rc1", "decisionnode-flash-0.9.0-rc1"),
+                "x-decisionnode-fallback", "decisionnode-flash-0.9.0-rc1",
+                "x-decisionnode-requested-model", "decisionnode-moe");
+        assertEquals(new Fallback("decisionnode-flash-0.9.0-rc1", "decisionnode-moe"), d.fallback());
+        assertEquals("decisionnode-flash-0.9.0-rc1", d.model());
         assertNull(decision(OK).fallback());
-        assertEquals(new Fallback("decisionnode-1.0-flash", null),
-                decision(OK, "x-decisionnode-fallback", "decisionnode-1.0-flash").fallback());
+        assertEquals(new Fallback("decisionnode-flash-0.9.0-rc1", null),
+                decision(OK, "x-decisionnode-fallback", "decisionnode-flash-0.9.0-rc1").fallback());
     }
 
     @Test

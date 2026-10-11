@@ -27,7 +27,7 @@ import org.junit.jupiter.api.Test;
 
 /** Batch results read as a stream with an idle timeout, and the socket's use of the client's transport. */
 class StreamingAndTransportTest {
-    private static final String LINE = "{\"custom_id\":\"r%d\",\"status\":200,\"body\":{\"model\":\"decisionnode-1.0\","
+    private static final String LINE = "{\"custom_id\":\"r%d\",\"status\":200,\"body\":{\"model\":\"decisionnode-moe-0.9.0-rc1\","
             + "\"answers\":{\"q\":{\"type\":\"truth\",\"truth\":0.5}}},\"headers\":{}}\n";
 
     private HttpServer server;

@@ -23,7 +23,7 @@ class KotlinUsageTest {
         server = HttpServer.create(InetSocketAddress("127.0.0.1", 0), 0)
         server.createContext("/") { ex ->
             ex.requestBody.readAllBytes()
-            val body = """{"model":"decisionnode-1.0","answers":{
+            val body = """{"model":"decisionnode-moe-0.9.0-rc1","answers":{
                 "route":{"type":"choice","choice":"billing","confidence":0.8,"probabilities":{"billing":0.87,"bug":0.08,"account":0.05}},
                 "urgency":{"type":"score","score":2.31,"confidence":0.5,"legend":{"0":"routine","1":"today","2":"urgent","3":"critical"},"probabilities":{"0":0.05,"1":0.15,"2":0.24,"3":0.56}},
                 "escalate":{"type":"truth","truth":0.94}},"usage":{"input_tokens":40,"output_tokens":0}}""".toByteArray()

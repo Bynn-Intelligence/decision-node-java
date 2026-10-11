@@ -6,8 +6,10 @@ import java.util.Map;
  * A model listed by {@code GET /v1/models}: a model of the catalogue, or one of the workspace's
  * fine-tuned models.
  *
- * @param name           the model id to send, for example {@code decisionnode-1.0}, or a fine-tuned
- *                       model's name, for example {@code decisionnode-1.0-flash@acme/fraud:3}
+ * @param name           the model id to send: a family ({@code decisionnode-moe},
+ *                       {@code decisionnode-flash}), a pinned release
+ *                       ({@code decisionnode-<family>-<version>}), or a fine-tuned model's name, for
+ *                       example {@code decisionnode-flash@acme/fraud:3}
  * @param description    what the model is for
  * @param releaseDate    the release date as sent, for example {@code 2026-10-01}
  * @param fineTuned      true for a fine-tuned model; null for a catalogue entry

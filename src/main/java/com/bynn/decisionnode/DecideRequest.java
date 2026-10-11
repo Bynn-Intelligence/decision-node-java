@@ -162,8 +162,8 @@ public final class DecideRequest {
         }
 
         /**
-         * The model for this request, for example {@code decisionnode-flash-latest}, or a fine-tuned
-         * model's name ({@code decisionnode-1.0-flash@acme/fraud}, {@code ...:3} for one version).
+         * The model for this request, for example {@code decisionnode-flash}, or a fine-tuned
+         * model's name ({@code decisionnode-flash@acme/fraud}, {@code ...:3} for one version).
          */
         public Builder model(String model) {
             this.model = model;
@@ -171,8 +171,8 @@ public final class DecideRequest {
         }
 
         /**
-         * Whether the API may answer a {@code decisionnode-1.0} request from
-         * {@code decisionnode-1.0-flash} when no worker of the full model can take it at once
+         * Whether the API may answer a {@code decisionnode-moe} request from
+         * {@code decisionnode-flash} when no worker of the full model can take it at once
          * (true, the API's default), or must answer with an {@link OverloadedError} instead
          * (false). Sent as {@code "fallback"} only when set; null leaves it out. A fallback answer
          * says so in {@link Decision#fallback()}.

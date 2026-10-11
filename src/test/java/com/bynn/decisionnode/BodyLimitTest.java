@@ -26,7 +26,7 @@ import org.junit.jupiter.api.Test;
 
 /** The API's 25 MiB body limit, checked on the encoded body before sending, and its 413. */
 class BodyLimitTest {
-    private static final String OK = "{\"model\":\"decisionnode-1.0\",\"answers\":{\"q\":{\"type\":\"truth\",\"truth\":0.5}},"
+    private static final String OK = "{\"model\":\"decisionnode-moe-0.9.0-rc1\",\"answers\":{\"q\":{\"type\":\"truth\",\"truth\":0.5}},"
             + "\"usage\":{\"input_tokens\":5,\"output_tokens\":0}}";
     private static final Map<String, Object> QUESTIONS = Map.of("q", truth("?"));
 

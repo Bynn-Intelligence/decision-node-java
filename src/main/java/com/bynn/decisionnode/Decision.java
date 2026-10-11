@@ -122,8 +122,9 @@ public final class Decision {
     }
 
     /**
-     * The model version that answered, for example {@code decisionnode-1.0}; for a fine-tuned model
-     * its pinned name, for example {@code decisionnode-1.0-flash@acme/fraud:3}.
+     * The pinned id of the model that answered, {@code decisionnode-<family>-<version>} (a
+     * {@code decisionnode-moe} request names the current MoE release); for a fine-tuned model its
+     * pinned name, for example {@code decisionnode-flash@acme/fraud:3}.
      */
     public String model() {
         return model;

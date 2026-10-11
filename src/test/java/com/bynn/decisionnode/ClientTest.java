@@ -30,7 +30,7 @@ import org.junit.jupiter.api.Test;
 
 /** The client against a small in-process HTTP server. */
 class ClientTest {
-    private static final String OK = "{\"model\":\"decisionnode-1.0\",\"answers\":{\"q\":{\"type\":\"truth\",\"truth\":0.5}},"
+    private static final String OK = "{\"model\":\"decisionnode-moe-0.9.0-rc1\",\"answers\":{\"q\":{\"type\":\"truth\",\"truth\":0.5}},"
             + "\"usage\":{\"input_tokens\":5,\"output_tokens\":0}}";
 
     record Seen(String method, String path, Map<String, List<String>> headers, String body) {}
@@ -97,18 +97,18 @@ class ClientTest {
         assertEquals("Bearer dn_test", s.headers().get("Authorization").get(0));
         assertEquals("decisionnode-java/" + DecisionNode.VERSION, s.headers().get("User-Agent").get(0));
         assertEquals("application/json", s.headers().get("Content-Type").get(0));
-        assertEquals("{\"model\":\"decisionnode-latest\",\"state\":\"s\",\"questions\":{\"q\":{\"type\":\"truth\",\"instructions\":\"?\"}}}", s.body());
+        assertEquals("{\"model\":\"decisionnode-moe\",\"state\":\"s\",\"questions\":{\"q\":{\"type\":\"truth\",\"instructions\":\"?\"}}}", s.body());
     }
 
     @Test
     void argumentsBeatTheEnvironmentWhichBeatsDefaults() {
-        Map<String, String> env = Map.of("DECISIONNODE_API_KEY", "dn_env", "DECISIONNODE_MODEL", "decisionnode-1.0-flash",
+        Map<String, String> env = Map.of("DECISIONNODE_API_KEY", "dn_env", "DECISIONNODE_MODEL", "decisionnode-flash",
                 "DECISIONNODE_BASE_URL", "https://example.invalid/");
         DecisionNode fromEnv = DecisionNode.builder().environment(env::get).build();
         assertEquals("https://example.invalid", fromEnv.baseUrl());
-        assertEquals("decisionnode-1.0-flash", fromEnv.model());
-        DecisionNode explicit = DecisionNode.builder().environment(env::get).model("decisionnode-1.0").baseUrl(url).build();
-        assertEquals("decisionnode-1.0", explicit.model());
+        assertEquals("decisionnode-flash", fromEnv.model());
+        DecisionNode explicit = DecisionNode.builder().environment(env::get).model("decisionnode-moe").baseUrl(url).build();
+        assertEquals("decisionnode-moe", explicit.model());
         DecisionNode none = DecisionNode.builder().environment(k -> null).build();
         assertEquals(DecisionNode.DEFAULT_BASE_URL, none.baseUrl());
         assertEquals(DecisionNode.DEFAULT_MODEL, none.model());
@@ -219,7 +219,7 @@ class ClientTest {
     @Test
     void decideRawSendsTheBodyAsGiven() {
         Map<String, Object> out = client().decideRaw(Map.of("questions", Map.of("q", truth("?"))));
-        assertEquals("decisionnode-1.0", out.get("model"));
+        assertEquals("decisionnode-moe-0.9.0-rc1", out.get("model"));
         assertEquals("{\"questions\":{\"q\":{\"type\":\"truth\",\"instructions\":\"?\"}}}", seen.peek().body());
     }
 
@@ -256,9 +256,9 @@ class ClientTest {
                 "{\"model\":\"m\",\"answers\":{\"score\":{\"type\":\"score\",\"score\":0.5,\"confidence\":0.5,"
                         + "\"legend\":{\"0\":\"low\",\"1\":\"high\"},\"probabilities\":{\"0\":0.5,\"1\":0.5}}}}");
         client().score("s", "?", List.of("low", "high"),
-                List.of(Image.fromUrl("img", "https://example.com/a.png")), "decisionnode-1.0-flash");
+                List.of(Image.fromUrl("img", "https://example.com/a.png")), "decisionnode-flash");
         String body = seen.peek().body();
-        assertTrue(body.startsWith("{\"model\":\"decisionnode-1.0-flash\""), body);
+        assertTrue(body.startsWith("{\"model\":\"decisionnode-flash\""), body);
         assertTrue(body.contains("\"images\":[{\"id\":\"img\",\"url\":\"https://example.com/a.png\"}]"), body);
     }
 
@@ -299,15 +299,15 @@ class ClientTest {
 
     @Test
     void emptyValuesCountAsNotGiven() {
-        Map<String, String> env = Map.of("DECISIONNODE_API_KEY", "dn_env", "DECISIONNODE_MODEL", "decisionnode-1.0-flash",
+        Map<String, String> env = Map.of("DECISIONNODE_API_KEY", "dn_env", "DECISIONNODE_MODEL", "decisionnode-flash",
                 "DECISIONNODE_BASE_URL", url);
         DecisionNode dn = DecisionNode.builder().environment(env::get).apiKey("").baseUrl("").model("").build();
         assertEquals(url, dn.baseUrl());
-        assertEquals("decisionnode-1.0-flash", dn.model());
+        assertEquals("decisionnode-flash", dn.model());
         dn.decide(DecideRequest.builder().state("s").question("q", truth("?")).model("").build());
         Seen s = seen.peek();
         assertEquals("Bearer dn_env", s.headers().get("Authorization").get(0));
-        assertTrue(s.body().startsWith("{\"model\":\"decisionnode-1.0-flash\""), s.body());
+        assertTrue(s.body().startsWith("{\"model\":\"decisionnode-flash\""), s.body());
     }
 
     @Test
@@ -437,7 +437,7 @@ class ClientTest {
     void helperWithAMalformedAnswerIsAServerErrorWithTheReason() {
         for (String answers : List.of("{\"check\":{\"type\":\"truth\",\"truth\":\"0.9\"}}", "{}")) {
             handler = s -> new Reply(200, Map.of("x-request-id", "req_h", "x-decisionnode-error", "could not be completed"),
-                    "{\"model\":\"decisionnode-1.0\",\"answers\":" + answers + "}");
+                    "{\"model\":\"decisionnode-moe-0.9.0-rc1\",\"answers\":" + answers + "}");
             ServerError e = assertThrows(ServerError.class, () -> client().check("s", "?"));
             assertEquals(200, e.status());
             assertEquals("req_h", e.requestId());
@@ -453,7 +453,7 @@ class ClientTest {
         }
         // decide returns the same malformed answer as an UnknownAnswer.
         handler = s -> new Reply(200, Map.of(),
-                "{\"model\":\"decisionnode-1.0\",\"answers\":{\"q\":{\"type\":\"truth\",\"truth\":\"0.9\"}}}");
+                "{\"model\":\"decisionnode-moe-0.9.0-rc1\",\"answers\":{\"q\":{\"type\":\"truth\",\"truth\":\"0.9\"}}}");
         assertInstanceOf(UnknownAnswer.class, client().decide("s", Map.of("q", truth("?"))).get("q"));
     }
 

@@ -61,7 +61,11 @@ public final class DecisionNode {
      */
     public static final int DEFAULT_INLINE_THRESHOLD = 524_288;
     public static final String DEFAULT_BASE_URL = "https://api.decisionnode.com";
-    public static final String DEFAULT_MODEL = "decisionnode-latest";
+    /**
+     * The model sent when a call names none and {@code DECISIONNODE_MODEL} is not set: the MoE
+     * family, which always means its current release.
+     */
+    public static final String DEFAULT_MODEL = "decisionnode-moe";
     public static final Duration DEFAULT_TIMEOUT = Duration.ofSeconds(10);
     /**
      * The time allowed for each storage {@code PUT} of an image upload, apart from
@@ -275,7 +279,7 @@ public final class DecisionNode {
 
     /**
      * {@link #decide(Object, Map, List, List, String, List)} with {@code fallback}: false asks the
-     * API not to answer a {@code decisionnode-1.0} request from {@code decisionnode-1.0-flash}
+     * API not to answer a {@code decisionnode-moe} request from {@code decisionnode-flash}
      * when no worker of the full model can take it at once (an {@link OverloadedError} instead);
      * null leaves it out, so the API's default (true) applies.
      */
