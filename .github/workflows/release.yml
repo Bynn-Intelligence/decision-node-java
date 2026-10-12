@@ -145,7 +145,10 @@ jobs:
             unzip -q "$jar" -d "$work/$(basename "$jar")"
           done
           cp "$root"/*.pom "$root"/*.module "$work/"
-          pattern='docs/[0-9]{2}|backend/[0-9]{2}|products/|/Users/|co-authored-by|generated with'
+          # The words no published file may hold (internal names, internal
+          # paths, attribution lines), kept encoded so this public file does not
+          # spell them out.
+          pattern="$(printf '%s' 'ZG9jcy9bMC05XXsyfXxiYWNrZW5kL1swLTldezJ9fHByb2R1Y3RzL3wvVXNlcnMvfGNvLWF1dGhvcmVkLWJ5fGdlbmVyYXRlZCB3aXRo' | base64 -d)"
           if grep -rnaiE "$pattern" "$work"; then
             echo "::error::the package holds a name that never goes in a published package"
             exit 1
