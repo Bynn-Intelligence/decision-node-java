@@ -63,6 +63,19 @@ class PlacesTest {
     }
 
     @Test
+    void aSessionsOpenChecksTheRangeOfMax() {
+        SessionRequest low = SessionRequest.builder().state("Lot camera 2.")
+                .question("cars", box("Every car in the lot.", null, null, 1)).build();
+        ValidationError e = assertThrows(ValidationError.class, () -> client().checkRequest(low));
+        Map<?, ?> entry = (Map<?, ?>) e.entries().get(0);
+        assertEquals("greater_than_equal", entry.get("type"));
+        assertEquals(List.of("body", "questions", "cars", "box", "max"), entry.get("loc"));
+        SessionRequest ok = SessionRequest.builder().state("Lot camera 2.")
+                .question("cars", box("Every car in the lot.", null, null, 8)).build();
+        client().checkRequest(ok);
+    }
+
+    @Test
     void severalPlacesAreToldByTheirList() throws Exception {
         Decision d = decision("{"
                 + "\"signs\":{\"type\":\"point\",\"count\":3,\"present\":0.99,\"complete\":0.81,\"points\":["

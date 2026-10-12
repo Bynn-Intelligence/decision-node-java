@@ -90,8 +90,6 @@ d["route"]                    // Answer: TruthAnswer, ChoiceAnswer, ScoreAnswer,
 | `number(instructions)`, `number(instructions, min, max)`, `number(instructions, min, max, step)` | `NumberAnswer` | `number()`, `expected()`, `confidence()`, `probabilities()` by the value as the API wrote it (`"7"`, `"3.5"`) |
 | `point(instructions)`, `point(instructions, image, units)` | `PointAnswer` | `x()`, `y()`, `present()`, `confidence()`, `image()`, `width()`, `height()` |
 | `box(instructions)`, `box(instructions, image, units)` | `BoxAnswer` | `x1()`, `y1()`, `x2()`, `y2()`, `present()`, `confidence()`, `image()`, `width()`, `height()` |
-| `point(instructions, image, units, max)` | `PointsAnswer` | `count()`, `present()`, `complete()`, `points()` (each `x()`, `y()`, `confidence()`), `image()`, `width()`, `height()` |
-| `box(instructions, image, units, max)` | `BoxesAnswer` | `count()`, `present()`, `complete()`, `boxes()` (each `x1()`, `y1()`, `x2()`, `y2()`, `confidence()`), `image()`, `width()`, `height()` |
 
 - `state`, instructions, descriptions and levels take a string or any value Jackson can
   serialise: maps, lists, records, POJOs.
@@ -128,26 +126,8 @@ the image at all; `confidence()` the probability that the place is right if it i
 image, and `image` names the one to look in by its id when it carries two or more (null leaves it
 out); a reference by number ("Picture 2") goes in the instructions.
 
-To find several, give `max`, an integer from 2 to 16 (sent only when given; anything else is the
-API's `ValidationError`, raised before sending). The answer is then a `PointsAnswer` or a
-`BoxesAnswer`: `count()` is how many of the things the image shows (it may be more than the list
-holds), `present()` the probability that it shows at least one, `complete()` the probability that
-the list holds every one, and `points()` or `boxes()` the places, left to right, each with its
-`confidence()`, in the units asked for and exactly as sent.
-
-```java
-Decision d = dn.decide(DecideRequest.builder()
-    .image(Image.fromUrl("lot", "https://files.example.com/lot/0917.jpg"))
-    .question("cars", box("Every car in the lot.", null, null, 8))
-    .build());
-BoxesAnswer cars = d.boxes("cars");
-for (PlaceBox car : cars.boxes()) {
-    System.out.println(car.x1() + "," + car.y1() + " to " + car.x2() + "," + car.y2());
-}
-```
-
 Answers are read by question id: `d.truth("id")`, `d.choice("id")`, `d.score("id")`,
-`d.number("id")`, `d.point("id")`, `d.box("id")`, `d.points("id")`, `d.boxes("id")`, or
+`d.number("id")`, `d.point("id")`, `d.box("id")`, or
 `d.get("id")` and `d.answers()` for the generic `Answer`. `Answer` is a sealed interface, so a
 `switch` or Kotlin `when` over it is exhaustive. An answer of a type newer than this SDK comes
 back as `UnknownAnswer` with its fields in `raw()`. So does an answer of a known type whose
