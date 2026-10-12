@@ -85,13 +85,6 @@ and the point and box question types.
 
 ### Added
 
-- Several places in one answer: `point(instructions, image, units, max)` and
-  `box(instructions, image, units, max)` with `max` an integer from 2 to 16, sent only when given
-  and checked before sending (`int_type`, `greater_than_equal`, `less_than_equal`, a
-  `ValidationError`). The answer is a `PointsAnswer` or `BoxesAnswer` (`count`, `present`,
-  `complete`, the `points` or `boxes` with their `confidence`, `image`, `width`, `height`),
-  told by its own list, read by `Decision.points(id)` and `boxes(id)`; one with a field missing
-  or of another type is an `UnknownAnswer`.
 - Point and box questions: `Questions.point` and `Questions.box`, each with an optional image id
   and units (`pixels` or `normalized`), and the answers `PointAnswer` (`x`, `y`, `present`,
   `confidence`, `image`, `width`, `height`) and `BoxAnswer` (`x1`, `y1`, `x2`, `y2` and the
