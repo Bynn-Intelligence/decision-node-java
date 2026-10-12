@@ -41,7 +41,13 @@ final class Transport {
          * A decision whose boosters name {@code ocr}: as {@link #DEFAULT}, except that a timeout is
          * never retried, since the server finishes the timed-out attempt and may bill it.
          */
-        OCR
+        OCR,
+        /**
+         * A call that carries its own {@code Idempotency-Key}, the same on every attempt (a
+         * collection's create, an enrollment): as {@link #DEFAULT}, and also a 409
+         * {@code idempotency_in_progress}, after its wait.
+         */
+        IDEMPOTENT
     }
 
     record Response(int status, HttpHeaders headers, Map<String, Object> object) {}
@@ -127,12 +133,25 @@ final class Transport {
         return call(method, path, body, contentType, policy, timeout);
     }
 
-    /** One call whose success is a JSON object, each attempt within {@code limit}. */
+    /**
+     * A call the server applies once per {@code Idempotency-Key}: a new random key for this call,
+     * sent on every attempt of it, so retrying it never applies it twice.
+     */
+    CompletableFuture<Response> idempotent(String method, String path, byte[] body) {
+        return call(method, path, body, "application/json", Policy.IDEMPOTENT, timeout, java.util.UUID.randomUUID().toString());
+    }
+
     private CompletableFuture<Response> call(String method, String path, byte[] body, String contentType, Policy policy,
             Duration limit) {
+        return call(method, path, body, contentType, policy, limit, null);
+    }
+
+    /** One call whose success is a JSON object, each attempt within {@code limit}. */
+    private CompletableFuture<Response> call(String method, String path, byte[] body, String contentType, Policy policy,
+            Duration limit, String idempotencyKey) {
         HttpRequest request;
         try {
-            request = request(method, path, body, contentType, "application/json", limit);
+            request = request(method, path, body, contentType, "application/json", limit, idempotencyKey);
         } catch (RuntimeException e) {
             return CompletableFuture.failedFuture(e);
         }
@@ -159,7 +178,7 @@ final class Transport {
     CompletableFuture<HttpResponse<Stream<String>>> lines(String path) {
         HttpRequest request;
         try {
-            request = request("GET", path, null, null, "application/x-ndjson", timeout);
+            request = request("GET", path, null, null, "application/x-ndjson", timeout, null);
         } catch (RuntimeException e) {
             return CompletableFuture.failedFuture(e);
         }
@@ -168,7 +187,7 @@ final class Transport {
     }
 
     private HttpRequest request(String method, String path, byte[] body, String contentType, String accept,
-            Duration limit) {
+            Duration limit, String idempotencyKey) {
         if (apiKey == null || apiKey.isEmpty()) {
             throw new AuthenticationError("no API key: pass one to the client or set DECISIONNODE_API_KEY");
         }
@@ -185,6 +204,9 @@ final class Transport {
         }
         for (Map.Entry<String, String> h : headers.entrySet()) {
             rb.setHeader(h.getKey(), h.getValue());
+        }
+        if (idempotencyKey != null) {
+            rb.setHeader("Idempotency-Key", idempotencyKey);
         }
         return rb.build();
     }
@@ -264,6 +286,8 @@ final class Transport {
                 return status == 429 || status == 529;
             case SESSION_OPEN:
                 return !(err instanceof SessionLimitError) && retryableStatus(status);
+            case IDEMPOTENT:
+                return retryableStatus(status) || (status == 409 && "idempotency_in_progress".equals(err.errorType()));
             default:
                 return retryableStatus(status);
         }

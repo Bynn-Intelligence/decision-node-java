@@ -12,8 +12,10 @@ Implements version 1.3 of the DecisionNode SDK specification: boosters and fine-
 
 - Collections of faces, on `DecisionNode.collections()`: `create`, `list`, `get`, `delete`,
   `enroll`, `listItems` and `deleteItem` and their async forms, each returning the API's object as
-  sent. `create` and `enroll` retry only on 429 and 529. The name, type, reference, label and the
-  image are checked before sending, with the API's 422 entries. The `face_recognition` booster's
+  sent. `create` and `enroll` send an `Idempotency-Key`, a new UUID for each call and the same on
+  every attempt, so they retry as any call and also on a 409 `idempotency_in_progress`; a 409
+  `idempotency_key_reused` is the base `DecisionNodeError`. The name, type, reference and label,
+  and an image URL's rules, are checked before sending, with the API's own errors. The `face_recognition` booster's
   reading is a `FaceRecognitionReading` (`image`, `faces`, `matches`, each a `FaceMatch` with its
   box, score, collection, reference, and name or label).
 - Several places in one answer: `point(instructions, image, units, max)` and

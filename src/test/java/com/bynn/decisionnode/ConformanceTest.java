@@ -325,6 +325,9 @@ class ConformanceTest {
         if (exp.containsKey("request_counts")) {
             checkCounts(list(exp.get("request_counts")), log);
         }
+        if (exp.containsKey("same_header")) {
+            checkSameHeader(map(exp.get("same_header")), log);
+        }
         if (exp.containsKey("session_events")) {
             checkEvents(list(exp.get("session_events")), events);
         }
@@ -696,6 +699,32 @@ class ConformanceTest {
             }
         }
         return out;
+    }
+
+    /**
+     * Every logged attempt matching path_suffix and method (when given) carries one and the same
+     * value of the header, at least min of them (2 by default), and the value matches pattern
+     * when given: an Idempotency-Key kept across retries (suite 1.13).
+     */
+    private static void checkSameHeader(Map<String, Object> spec, List<Object> log) {
+        String name = ((String) spec.get("name")).toLowerCase(java.util.Locale.ROOT);
+        String suffix = (String) spec.get("path_suffix");
+        String method = (String) spec.get("method");
+        List<Object> values = new ArrayList<>();
+        for (Object o : log) {
+            Map<String, Object> r = map(o);
+            if ((suffix == null || ((String) r.get("path")).endsWith(suffix)) && (method == null || method.equals(r.get("method")))) {
+                values.add(mapOrEmpty(r.get("headers")).get(name));
+            }
+        }
+        int min = spec.get("min") == null ? 2 : ((Number) spec.get("min")).intValue();
+        if (values.size() < min || values.contains(null) || new HashSet<>(values).size() != 1) {
+            fail("same_header " + name + ": expected one value on every attempt, got " + values);
+        }
+        String pattern = (String) spec.get("pattern");
+        if (pattern != null && !Pattern.compile(pattern).matcher((String) values.get(0)).find()) {
+            fail("same_header " + name + ": " + values.get(0) + " does not match " + pattern);
+        }
     }
 
     private static void checkSequence(List<Object> expected, List<Object> log) {

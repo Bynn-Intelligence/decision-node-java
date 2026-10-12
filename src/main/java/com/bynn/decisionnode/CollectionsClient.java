@@ -10,9 +10,11 @@ import java.util.concurrent.CompletableFuture;
  * A workspace's collections of faces, and the public collections it may use: create one, enroll
  * faces into it, list and delete them. Every result is the API's object exactly as sent.
  *
- * <p>{@link #create} and {@link #enroll} retry only on 429 and 529, which the API answers before
- * applying anything: a repeated enrollment would enroll the face twice and bill it twice. The
- * reads and deletes retry as any call.
+ * <p>{@link #create} and {@link #enroll} send an {@code Idempotency-Key}, a new random key for each
+ * call and the same on every attempt of it, so the API creates, enrolls and bills once however often
+ * the call is tried. They retry as any call, and also on a 409 {@code idempotency_in_progress}
+ * after its wait; a 409 {@code idempotency_key_reused} is raised. The reads and deletes carry no
+ * key.
  */
 public final class CollectionsClient {
     private final DecisionNode client;
@@ -50,7 +52,7 @@ public final class CollectionsClient {
         } catch (RuntimeException e) {
             return CompletableFuture.failedFuture(e);
         }
-        return t().json("POST", "/v1/collections", body, Transport.Policy.MUTATION).thenApply(Transport.Response::object);
+        return t().idempotent("POST", "/v1/collections", body).thenApply(Transport.Response::object);
     }
 
     /** {@code GET /v1/collections}: the workspace's collections, then the public ones, in the order sent. */
@@ -90,7 +92,8 @@ public final class CollectionsClient {
     /**
      * {@code POST /v1/collections/{id}/items}: enrolls the face in one image under the item's
      * {@code reference} (1 to 64 of {@code A-Z a-z 0-9 _ . : -}). The image goes as a decision's
-     * image does: a URL as given, local bytes inline or uploaded.
+     * image does: a URL as given, local bytes inline or uploaded. A picture the API cannot read is
+     * its 422 {@code image_unreadable}.
      */
     public Map<String, Object> enroll(String collectionId, Object image, String reference) {
         return enroll(collectionId, image, reference, null);
@@ -110,7 +113,11 @@ public final class CollectionsClient {
         try {
             path = path(collectionId) + "/items";
             LocalChecks.collectionEnroll(image, reference, label);
-            LocalChecks.images(List.of(image), client.limits(null));
+            // Only a URL's rules are a decision's here; every other fault of the picture is the
+            // server's to find (its 422 image_unreadable).
+            if (image instanceof Image img && img.url() != null) {
+                LocalChecks.url(img.id(), img.url());
+            }
         } catch (RuntimeException e) {
             return CompletableFuture.failedFuture(e);
         }
@@ -121,7 +128,7 @@ public final class CollectionsClient {
             if (label != null) {
                 body.put("label", label);
             }
-            return t().json("POST", path, Json.write(body), Transport.Policy.MUTATION);
+            return t().idempotent("POST", path, Json.write(body));
         }).thenApply(Transport.Response::object);
     }
 

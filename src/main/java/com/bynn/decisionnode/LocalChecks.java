@@ -895,7 +895,7 @@ final class LocalChecks {
     static final int COLLECTION_NAME_MAX = 80;
     static final int ITEM_REFERENCE_MAX = 64;
     static final int ITEM_LABEL_MAX = 128;
-    static final String ITEM_REFERENCE_PATTERN = "^[A-Za-z0-9_.:-]+$";
+    static final String ITEM_REFERENCE_PATTERN = "^[A-Za-z0-9_.:-]{1,64}$";
 
     /** A collection's create: type {@code face}, name 1 to 80 characters (the API's 422 entries). */
     static void collectionCreate(Object type, Object name) {
@@ -910,9 +910,9 @@ final class LocalChecks {
     }
 
     /**
-     * An enrollment: an image, a reference of 1 to 64 of {@code [A-Za-z0-9_.:-]} and a label of at
-     * most 128 characters when given (the API's 422 entries). The image is then checked as a
-     * decision's.
+     * An enrollment: an image, a reference of 1 to 64 of {@code [A-Za-z0-9_.:-]} (its length first,
+     * then the pattern, which an empty reference fails) and a label of at most 128 characters when
+     * given (the API's 422 entries). Of the image only a URL's rules are checked here.
      */
     static void collectionEnroll(Object image, Object reference, Object label) {
         List<Map<String, Object>> entries = new ArrayList<>();
@@ -921,7 +921,11 @@ final class LocalChecks {
             input.put("reference", reference);
             entries.add(entry("missing", List.of("body", "image"), "Field required", input, null));
         }
-        entries.addAll(stringEntries(List.of("body", "reference"), reference, 1, ITEM_REFERENCE_MAX, ITEM_REFERENCE_PATTERN));
+        if (reference == null) {
+            entries.add(entry("missing", List.of("body", "reference"), "Field required", null, null));
+        } else {
+            entries.addAll(stringEntries(List.of("body", "reference"), reference, 0, ITEM_REFERENCE_MAX, ITEM_REFERENCE_PATTERN));
+        }
         if (label != null) {
             entries.addAll(stringEntries(List.of("body", "label"), label, 0, ITEM_LABEL_MAX, null));
         }

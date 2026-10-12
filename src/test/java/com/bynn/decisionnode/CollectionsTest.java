@@ -24,7 +24,7 @@ import org.junit.jupiter.api.Test;
 
 /** A workspace's collections of faces. */
 class CollectionsTest {
-    record Seen(String method, String path, String body) {}
+    record Seen(String method, String path, String body, String key) {}
 
     record Reply(int status, String body) {}
 
@@ -50,7 +50,8 @@ class CollectionsTest {
     private void handle(HttpExchange ex) throws IOException {
         String body = new String(ex.getRequestBody().readAllBytes(), StandardCharsets.UTF_8);
         seen.add(new Seen(ex.getRequestMethod(), ex.getRequestURI().getRawPath()
-                + (ex.getRequestURI().getRawQuery() == null ? "" : "?" + ex.getRequestURI().getRawQuery()), body));
+                + (ex.getRequestURI().getRawQuery() == null ? "" : "?" + ex.getRequestURI().getRawQuery()), body,
+                ex.getRequestHeaders().getFirst("Idempotency-Key")));
         Reply r = reply.apply(seen.size());
         byte[] out = r.body().getBytes(StandardCharsets.UTF_8);
         ex.getResponseHeaders().add("content-type", "application/json");
@@ -78,24 +79,40 @@ class CollectionsTest {
         assertEquals(Map.of("type", "face", "name", "Staff"), json(s.body()));
     }
 
+    private static final java.util.regex.Pattern UUID_V4 =
+            java.util.regex.Pattern.compile("^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$");
+
     @Test
-    void createAndEnrollRetryOnlyOn429And529() {
-        reply = n -> new Reply(500, "{\"detail\":{\"error_type\":\"api_error\",\"message\":\"x\"}}");
-        assertThrows(ServerError.class, () -> collections().create("Staff"));
-        assertEquals(1, seen.size());
-        seen.clear();
-        assertThrows(ServerError.class, () -> collections().enroll("col_1", Image.fromUrl("badge", "https://files.example.com/b.jpg"), "emp-1042"));
-        assertEquals(1, seen.size());
-        seen.clear();
-        reply = n -> n == 1 ? new Reply(529, "{\"detail\":{\"error_type\":\"overloaded_error\",\"message\":\"x\"}}")
+    void createAndEnrollKeepOneIdempotencyKeyAcrossTheirRetries() {
+        reply = n -> n == 1 ? new Reply(500, "{\"detail\":{\"error_type\":\"api_error\",\"message\":\"x\"}}")
                 : new Reply(200, "{\"id\":\"col_1\"}");
         assertEquals("col_1", collections().create("Staff").get("id"));
+        List<String> keys = seen.stream().map(Seen::key).toList();
+        assertEquals(2, keys.size());
+        assertTrue(UUID_V4.matcher(keys.get(0)).matches(), keys.get(0));
+        assertEquals(keys.get(0), keys.get(1));
+        seen.clear();
+        reply = n -> n == 1 ? new Reply(409, "{\"detail\":{\"error_type\":\"idempotency_in_progress\",\"message\":\"x\"}}")
+                : new Reply(200, "{\"id\":\"itm_1\"}");
+        collections().enroll("col_1", Image.fromUrl("badge", "https://files.example.com/b.jpg"), "emp-1042");
         assertEquals(2, seen.size());
+        assertEquals(1, seen.stream().map(Seen::key).distinct().count());
+        assertFalse(seen.peek().key().equals(keys.get(0)), "a new key for each call");
+    }
+
+    @Test
+    void aReusedKeyIsTheBaseErrorAndReadsCarryNoKey() {
+        reply = n -> new Reply(409, "{\"detail\":{\"error_type\":\"idempotency_key_reused\",\"message\":\"x\"}}");
+        DecisionNodeError e = assertThrows(DecisionNodeError.class, () -> collections().create("Staff"));
+        assertEquals(DecisionNodeError.class, e.getClass());
+        assertEquals("idempotency_key_reused", e.errorType());
+        assertEquals(1, seen.size());
         seen.clear();
         reply = n -> n == 1 ? new Reply(500, "{\"detail\":{\"error_type\":\"api_error\",\"message\":\"x\"}}")
                 : new Reply(200, "{\"id\":\"col_1\"}");
         assertEquals("col_1", collections().get("col_1").get("id"));
         assertEquals(2, seen.size());
+        assertTrue(seen.stream().allMatch(s -> s.key() == null));
     }
 
     @Test
@@ -136,16 +153,30 @@ class CollectionsTest {
         assertEquals("string_too_long", entryType(() -> collections().create("x".repeat(81))));
         collections().create("𠀀".repeat(80));
         Image badge = Image.fromUrl("badge", "https://files.example.com/b.jpg");
-        assertEquals("string_too_short", entryType(() -> collections().enroll("col_1", badge, "")));
+        assertEquals("string_pattern_mismatch", entryType(() -> collections().enroll("col_1", badge, "")));
         assertEquals("string_too_long", entryType(() -> collections().enroll("col_1", badge, "r".repeat(65))));
         ValidationError pattern = assertThrows(ValidationError.class, () -> collections().enroll("col_1", badge, "emp 1042"));
         Map<?, ?> e = (Map<?, ?>) pattern.entries().get(0);
         assertEquals("string_pattern_mismatch", e.get("type"));
-        assertEquals(Map.of("pattern", "^[A-Za-z0-9_.:-]+$"), e.get("ctx"));
+        assertEquals(Map.of("pattern", "^[A-Za-z0-9_.:-]{1,64}$"), e.get("ctx"));
         assertEquals("string_too_long", entryType(() -> collections().enroll("col_1", badge, "emp-1042", "l".repeat(129))));
+        BadRequestError url = assertThrows(BadRequestError.class,
+                () -> collections().enroll("col_1", Image.fromUrl("badge", "http://files.example.com/b.jpg"), "emp-1042"));
+        assertNull(url.status());
         BadRequestError limit = assertThrows(BadRequestError.class, () -> collections().listItems("col_1", null, 101));
         assertEquals("api_usage_error", limit.errorType());
         assertTrue(seen.stream().noneMatch(s -> s.method().equals("POST") && s.path().endsWith("/items")));
+    }
+
+    @Test
+    void aPictureTheApiCannotReadIsTheServersToJudge() throws IOException {
+        reply = n -> new Reply(422, "{\"detail\":[{\"type\":\"image_unreadable\",\"loc\":[\"body\",\"image\"],"
+                + "\"msg\":\"The picture could not be read\",\"input\":null}]}");
+        Image gif = Image.fromBytes("badge", "GIF89a....".getBytes(StandardCharsets.US_ASCII), "image/jpeg");
+        ValidationError e = assertThrows(ValidationError.class, () -> collections().enroll("col_1", gif, "emp-1042"));
+        assertEquals(422, e.status());
+        assertEquals(1, seen.size());
+        assertEquals("image/jpeg", ((Map<?, ?>) json(seen.peek().body()).get("image")).get("media_type"));
     }
 
     @Test
