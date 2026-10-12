@@ -103,11 +103,31 @@ publishing {
                 }
                 organization {
                     name.set("Bynn Intelligence, Inc.")
+                    url.set("https://decisionnode.com")
+                }
+                developers {
+                    developer {
+                        id.set("bynn-intelligence")
+                        name.set("Bynn Intelligence, Inc.")
+                        email.set("engineering@bynn.com")
+                        organization.set("Bynn Intelligence, Inc.")
+                        organizationUrl.set("https://decisionnode.com")
+                    }
                 }
                 scm {
                     url.set("https://github.com/Bynn-Intelligence/decision-node-java")
+                    connection.set("scm:git:https://github.com/Bynn-Intelligence/decision-node-java.git")
+                    developerConnection.set("scm:git:ssh://git@github.com/Bynn-Intelligence/decision-node-java.git")
                 }
             }
+        }
+    }
+    repositories {
+        // The release workflow's dry-run publishes here, a Maven-layout directory; its publish
+        // job signs and uploads exactly these files, never a rebuild.
+        maven {
+            name = "staging"
+            url = uri(layout.buildDirectory.dir("staging-deploy"))
         }
     }
 }
