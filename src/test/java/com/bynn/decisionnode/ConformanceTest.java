@@ -1118,6 +1118,42 @@ class ConformanceTest {
             n.put("image", bx.image());
             n.put("width", bx.width());
             n.put("height", bx.height());
+        } else if (a instanceof PointsAnswer ps) {
+            n.put("kind", "points");
+            n.put("count", ps.count());
+            n.put("present", ps.present());
+            n.put("complete", ps.complete());
+            List<Object> points = new ArrayList<>();
+            for (PlacePoint p : ps.points()) {
+                Map<String, Object> e = new LinkedHashMap<>();
+                e.put("x", p.x());
+                e.put("y", p.y());
+                e.put("confidence", p.confidence());
+                points.add(e);
+            }
+            n.put("points", points);
+            n.put("image", ps.image());
+            n.put("width", ps.width());
+            n.put("height", ps.height());
+        } else if (a instanceof BoxesAnswer bs) {
+            n.put("kind", "boxes");
+            n.put("count", bs.count());
+            n.put("present", bs.present());
+            n.put("complete", bs.complete());
+            List<Object> boxes = new ArrayList<>();
+            for (PlaceBox b : bs.boxes()) {
+                Map<String, Object> e = new LinkedHashMap<>();
+                e.put("x1", b.x1());
+                e.put("y1", b.y1());
+                e.put("x2", b.x2());
+                e.put("y2", b.y2());
+                e.put("confidence", b.confidence());
+                boxes.add(e);
+            }
+            n.put("boxes", boxes);
+            n.put("image", bs.image());
+            n.put("width", bs.width());
+            n.put("height", bs.height());
         } else {
             n.put("kind", "unknown");
             n.put("type", a.type());
@@ -1619,13 +1655,26 @@ class ConformanceTest {
                     }
                     case "$image":
                         return image(map(decode(e.getValue(), ctx)));
-                    case "$point": {
-                        Map<String, Object> a = map(decode(e.getValue(), ctx));
-                        return Questions.point(a.get("instructions"), (String) a.get("image"), (String) a.get("units"));
-                    }
+                    case "$point":
                     case "$box": {
                         Map<String, Object> a = map(decode(e.getValue(), ctx));
-                        return Questions.box(a.get("instructions"), (String) a.get("image"), (String) a.get("units"));
+                        Object max = a.get("max");
+                        if (max != null && !(max instanceof Integer)) {
+                            // A max the builder's Integer cannot hold (2.5, "8", true) goes as the
+                            // plain wire-form question, which the client checks the same way.
+                            Map<String, Object> q = new LinkedHashMap<>();
+                            q.put("type", e.getKey().equals("$point") ? "point" : "box");
+                            for (String k : List.of("instructions", "image", "units", "max")) {
+                                if (a.containsKey(k)) {
+                                    q.put(k, a.get(k));
+                                }
+                            }
+                            return q;
+                        }
+                        Integer most = (Integer) max;
+                        return e.getKey().equals("$point")
+                                ? Questions.point(a.get("instructions"), (String) a.get("image"), (String) a.get("units"), most)
+                                : Questions.box(a.get("instructions"), (String) a.get("image"), (String) a.get("units"), most);
                     }
                     case "$video": {
                         Map<String, Object> a = map(decode(e.getValue(), ctx));

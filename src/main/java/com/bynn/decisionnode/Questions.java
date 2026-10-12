@@ -180,7 +180,17 @@ public final class Questions {
      * width and the height). A null argument is left out of the request.
      */
     public static Question point(Object instructions, String image, String units) {
-        return place("point", instructions, image, units);
+        return point(instructions, image, units, null);
+    }
+
+    /**
+     * Up to {@code max} spots in the image (an integer from 2 to 16): answered as a
+     * {@link PointsAnswer} with how many there are and each spot, left to right. The other
+     * arguments are those of {@link #point(Object, String, String)}; a null argument is left out
+     * of the request.
+     */
+    public static Question point(Object instructions, String image, String units, Integer max) {
+        return place("point", instructions, image, units, max);
     }
 
     /**
@@ -195,10 +205,18 @@ public final class Questions {
 
     /** A rectangle in the image with the id {@code image}, in {@code units}, like {@link #point(Object, String, String)}. */
     public static Question box(Object instructions, String image, String units) {
-        return place("box", instructions, image, units);
+        return box(instructions, image, units, null);
     }
 
-    private static Question place(String type, Object instructions, String image, String units) {
+    /**
+     * Up to {@code max} rectangles in the image (an integer from 2 to 16): answered as a
+     * {@link BoxesAnswer}, like {@link #point(Object, String, String, Integer)}.
+     */
+    public static Question box(Object instructions, String image, String units, Integer max) {
+        return place("box", instructions, image, units, max);
+    }
+
+    private static Question place(String type, Object instructions, String image, String units, Integer max) {
         Map<String, Object> q = new LinkedHashMap<>();
         q.put("type", type);
         if (instructions != null) {
@@ -209,6 +227,9 @@ public final class Questions {
         }
         if (units != null) {
             q.put("units", units);
+        }
+        if (max != null) {
+            q.put("max", max);
         }
         return new Question(q);
     }

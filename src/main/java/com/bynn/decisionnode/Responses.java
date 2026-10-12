@@ -372,6 +372,12 @@ final class Responses {
             if (choice instanceof String && confidence != null && p != null) {
                 return new ChoiceAnswer((String) choice, confidence, p, view);
             }
+        } else if (("point".equals(type) || "box".equals(type)) && (raw.containsKey("points") || raw.containsKey("boxes"))) {
+            // Several places, told by the answer's own list: points for a point, boxes for a box.
+            Answer places = places((String) type, raw, view);
+            if (places != null) {
+                return places;
+            }
         } else if ("point".equals(type)) {
             double[] n = numbers(raw, "x", "y", "present", "confidence", "width", "height");
             if (n != null && raw.get("image") instanceof String) {
@@ -392,6 +398,45 @@ final class Responses {
             }
         }
         return new UnknownAnswer(type instanceof String ? (String) type : null, view);
+    }
+
+    /**
+     * A {@link PointsAnswer} or {@link BoxesAnswer}: count a JSON integer of at least 0, present,
+     * complete, width and height numbers, image a string, and the list of the question's type
+     * (points or boxes) whose every entry has its numbers; null when anything is missing or of
+     * another type.
+     */
+    private static Answer places(String type, Map<String, Object> raw, Map<String, Object> view) {
+        boolean point = type.equals("point");
+        Long count = integer(raw.get("count"));
+        double[] n = numbers(raw, "present", "complete", "width", "height");
+        List<Object> found = Json.asList(raw.get(point ? "points" : "boxes"));
+        if (count == null || count < 0 || n == null || found == null || !(raw.get("image") instanceof String)) {
+            return null;
+        }
+        String image = (String) raw.get("image");
+        if (point) {
+            List<PlacePoint> points = new ArrayList<>(found.size());
+            for (Object o : found) {
+                Map<String, Object> p = Json.asMap(o);
+                double[] v = p == null ? null : numbers(p, "x", "y", "confidence");
+                if (v == null) {
+                    return null;
+                }
+                points.add(new PlacePoint(v[0], v[1], v[2]));
+            }
+            return new PointsAnswer(count, n[0], n[1], Collections.unmodifiableList(points), image, n[2], n[3], view);
+        }
+        List<PlaceBox> boxes = new ArrayList<>(found.size());
+        for (Object o : found) {
+            Map<String, Object> b = Json.asMap(o);
+            double[] v = b == null ? null : numbers(b, "x1", "y1", "x2", "y2", "confidence");
+            if (v == null) {
+                return null;
+            }
+            boxes.add(new PlaceBox(v[0], v[1], v[2], v[3], v[4]));
+        }
+        return new BoxesAnswer(count, n[0], n[1], Collections.unmodifiableList(boxes), image, n[2], n[3], view);
     }
 
     /** The numbers of these fields, in order; null when one is missing or not a JSON number. */

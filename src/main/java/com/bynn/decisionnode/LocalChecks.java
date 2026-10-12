@@ -496,9 +496,13 @@ final class LocalChecks {
 
     /**
      * A {@code point} or {@code box} question: its image among the request's (the 422 entries),
-     * its units (a 422 entry), then its instructions (the plain 400). Without image ids (a
+     * its units and its max (422 entries), then its instructions (the plain 400). Without image ids (a
      * session's open) the image rules are left out.
      */
+    /** The fewest and the most places a point or box question's {@code max} asks for. */
+    static final int PLACES_MIN = 2;
+    static final int PLACES_MAX = 16;
+
     private static DecisionNodeError place(String qid, String type, Map<String, Object> q, List<Object> loc,
             List<Map<String, Object>> entries, List<String> imageIds) {
         if (imageIds != null) {
@@ -520,6 +524,24 @@ final class LocalChecks {
         if (units != null && !(units instanceof String && UNITS.contains(units))) {
             entries.add(entry("literal_error", append(loc, "units"), "Input should be 'pixels' or 'normalized'", units,
                     Map.of("expected", "'pixels' or 'normalized'")));
+        }
+        Object max = q.get("max");
+        if (max != null) {
+            // Several places: max a JSON integer (never 2.5, "8" or true) from 2 to 16. Whether the
+            // model answers several places is the server's to say.
+            boolean integer = max instanceof Integer || max instanceof Long || max instanceof Short || max instanceof Byte
+                    || max instanceof java.math.BigInteger;
+            long most = integer ? new java.math.BigInteger(max.toString()).max(java.math.BigInteger.valueOf(-1))
+                    .min(java.math.BigInteger.valueOf(PLACES_MAX + 1L)).longValue() : 0;
+            if (!integer) {
+                entries.add(entry("int_type", append(loc, "max"), "Input should be a valid integer", max, null));
+            } else if (most < PLACES_MIN) {
+                entries.add(entry("greater_than_equal", append(loc, "max"), "Input should be greater than or equal to " + PLACES_MIN,
+                        max, Map.of("ge", PLACES_MIN)));
+            } else if (most > PLACES_MAX) {
+                entries.add(entry("less_than_equal", append(loc, "max"), "Input should be less than or equal to " + PLACES_MAX,
+                        max, Map.of("le", PLACES_MAX)));
+            }
         }
         if (q.get("instructions") == null) {
             String name = type.equals("point") ? "Point" : "Box";

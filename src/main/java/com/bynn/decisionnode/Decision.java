@@ -89,6 +89,16 @@ public final class Decision {
         return as(id, BoxAnswer.class);
     }
 
+    /** The answer to a {@code point} question asked with {@code max}. */
+    public PointsAnswer points(String id) {
+        return as(id, PointsAnswer.class);
+    }
+
+    /** The answer to a {@code box} question asked with {@code max}. */
+    public BoxesAnswer boxes(String id) {
+        return as(id, BoxesAnswer.class);
+    }
+
     private <T extends Answer> T as(String id, Class<T> type) {
         Answer a = get(id);
         if (!type.isInstance(a)) {

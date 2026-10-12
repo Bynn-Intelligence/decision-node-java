@@ -4,11 +4,13 @@ import java.util.Map;
 
 /**
  * One answer of a {@link Decision}. It is a {@link TruthAnswer}, a {@link ChoiceAnswer}, a
- * {@link ScoreAnswer}, a {@link NumberAnswer}, a {@link PointAnswer}, a {@link BoxAnswer}, or an
+ * {@link ScoreAnswer}, a {@link NumberAnswer}, a {@link PointAnswer} or {@link BoxAnswer}, for a
+ * point or box question asked with {@code max} a {@link PointsAnswer} or {@link BoxesAnswer}, or an
  * {@link UnknownAnswer} for a question type this SDK version does not know yet.
  */
 public sealed interface Answer
-        permits TruthAnswer, ChoiceAnswer, ScoreAnswer, NumberAnswer, PointAnswer, BoxAnswer, UnknownAnswer {
+        permits TruthAnswer, ChoiceAnswer, ScoreAnswer, NumberAnswer, PointAnswer, BoxAnswer, PointsAnswer, BoxesAnswer,
+                UnknownAnswer {
 
     /**
      * The answer's type: {@code truth}, {@code choice}, {@code score}, {@code number},
