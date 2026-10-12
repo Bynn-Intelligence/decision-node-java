@@ -891,6 +891,72 @@ final class LocalChecks {
     }
 
     /** {@code offset} 0 or more, {@code limit} 1 to 100. */
+    /** The longest collection name, item reference and item label, in characters. */
+    static final int COLLECTION_NAME_MAX = 80;
+    static final int ITEM_REFERENCE_MAX = 64;
+    static final int ITEM_LABEL_MAX = 128;
+    static final String ITEM_REFERENCE_PATTERN = "^[A-Za-z0-9_.:-]+$";
+
+    /** A collection's create: type {@code face}, name 1 to 80 characters (the API's 422 entries). */
+    static void collectionCreate(Object type, Object name) {
+        List<Map<String, Object>> entries = new ArrayList<>();
+        if (!"face".equals(type)) {
+            entries.add(entry("literal_error", List.of("body", "type"), "Input should be 'face'", type, Map.of("expected", "'face'")));
+        }
+        entries.addAll(stringEntries(List.of("body", "name"), name, 1, COLLECTION_NAME_MAX, null));
+        if (!entries.isEmpty()) {
+            throw invalid(entries);
+        }
+    }
+
+    /**
+     * An enrollment: an image, a reference of 1 to 64 of {@code [A-Za-z0-9_.:-]} and a label of at
+     * most 128 characters when given (the API's 422 entries). The image is then checked as a
+     * decision's.
+     */
+    static void collectionEnroll(Object image, Object reference, Object label) {
+        List<Map<String, Object>> entries = new ArrayList<>();
+        if (image == null) {
+            Map<String, Object> input = new LinkedHashMap<>();
+            input.put("reference", reference);
+            entries.add(entry("missing", List.of("body", "image"), "Field required", input, null));
+        }
+        entries.addAll(stringEntries(List.of("body", "reference"), reference, 1, ITEM_REFERENCE_MAX, ITEM_REFERENCE_PATTERN));
+        if (label != null) {
+            entries.addAll(stringEntries(List.of("body", "label"), label, 0, ITEM_LABEL_MAX, null));
+        }
+        if (!entries.isEmpty()) {
+            throw invalid(entries);
+        }
+    }
+
+    /**
+     * A string field's 422 entry, as the API answers it: missing, not a string, too short, too
+     * long (both in characters, Unicode code points), or not matching {@code pattern}.
+     */
+    private static List<Map<String, Object>> stringEntries(List<Object> loc, Object value, int least, int most, String pattern) {
+        if (value == null) {
+            return least > 0 ? List.of(entry("missing", loc, "Field required", null, null)) : List.of();
+        }
+        if (!(value instanceof String text)) {
+            return List.of(entry("string_type", loc, "Input should be a valid string", value, null));
+        }
+        int length = text.codePointCount(0, text.length());
+        if (length < least) {
+            return List.of(entry("string_too_short", loc, "String should have at least " + least + " character" + (least == 1 ? "" : "s"),
+                    text, Map.of("min_length", least)));
+        }
+        if (length > most) {
+            return List.of(entry("string_too_long", loc, "String should have at most " + most + " characters", text,
+                    Map.of("max_length", most)));
+        }
+        if (pattern != null && !java.util.regex.Pattern.compile(pattern).matcher(text).matches()) {
+            return List.of(entry("string_pattern_mismatch", loc, "String should match pattern '" + pattern + "'", text,
+                    Map.of("pattern", pattern)));
+        }
+        return List.of();
+    }
+
     static void listParams(Integer offset, Integer limit) {
         if (offset != null && offset < 0) {
             throw usage("Query parameter offset must be an integer of 0 or more, got " + offset + ".", null);

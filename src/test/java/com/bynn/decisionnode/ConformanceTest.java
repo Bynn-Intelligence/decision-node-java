@@ -212,6 +212,20 @@ class ConformanceTest {
             if (!same(exp.get("upload_ids"), result)) {
                 fail("upload_ids: expected " + exp.get("upload_ids") + ", got " + result);
             }
+        } else if (exp.containsKey("collections")) {
+            List<?> expected = list(exp.get("collections"));
+            List<?> got = (List<?>) result;
+            if (expected.size() != got.size()) {
+                fail("collections: expected " + expected.size() + " collections, got " + got.size());
+            }
+            for (int i = 0; i < expected.size(); i++) {
+                match(expected.get(i), got.get(i), "collections[" + i + "]");
+            }
+        } else if (exp.containsKey("collection") || exp.containsKey("item") || exp.containsKey("item_page")
+                || exp.containsKey("deleted")) {
+            String kind = exp.containsKey("collection") ? "collection" : exp.containsKey("item") ? "item"
+                    : exp.containsKey("item_page") ? "item_page" : "deleted";
+            match(exp.get(kind), result, kind);
         } else {
             fail("no expectation this harness knows: " + exp.keySet());
         }
@@ -807,6 +821,17 @@ class ConformanceTest {
                 }
                 case "answer" -> match(mapOrEmpty(spec.get("answer")), normAnswer((Answer) result), path + ".answer");
                 case "batch" -> match(mapOrEmpty(spec.get("batch")), ((Batch) result).raw(), path + ".batch");
+                case "collection", "item", "item_page", "deleted" -> match(mapOrEmpty(spec.get(kind)), result, path + "." + kind);
+                case "collections" -> {
+                    List<?> expected = list(spec.get("collections"));
+                    List<?> got = (List<?>) result;
+                    if (expected.size() != got.size()) {
+                        fail(path + ".collections: expected " + expected.size() + " collections, got " + got.size());
+                    }
+                    for (int i = 0; i < expected.size(); i++) {
+                        match(expected.get(i), got.get(i), path + ".collections[" + i + "]");
+                    }
+                }
                 case "batch_page" -> match(mapOrEmpty(spec.get("batch_page")), ((BatchPage) result).raw(), path + ".batch_page");
                 case "batch_results" -> checkResultsSpec(spec, result, path);
                 case "batch_run" -> {
@@ -1032,16 +1057,19 @@ class ConformanceTest {
                 list.add(e);
             }
             n.put("detections", list);
-        } else if (r instanceof WantedPersonReading w) {
-            n.put("kind", "wanted_person");
+        } else if (r instanceof FaceRecognitionReading w) {
+            n.put("kind", "face_recognition");
             n.put("image", w.image());
             n.put("faces", w.faces());
             List<Object> list = new ArrayList<>();
-            for (WantedMatch m : w.matches()) {
+            for (FaceMatch m : w.matches()) {
                 Map<String, Object> e = new LinkedHashMap<>();
                 e.put("box", normBox(m.box()));
                 e.put("score", m.score());
+                e.put("collection", m.collection());
                 e.put("reference", m.reference());
+                e.put("name", m.name());
+                e.put("label", m.label());
                 list.add(e);
             }
             n.put("matches", list);
@@ -1459,6 +1487,40 @@ class ConformanceTest {
             case "batches.cancel":
                 return async ? join(client.batches().cancelAsync((String) args.get("batch_id")))
                         : client.batches().cancel((String) args.get("batch_id"));
+            case "collections.create": {
+                String name = (String) args.get("name");
+                if (args.containsKey("type")) {
+                    return async ? join(client.collections().createAsync(name, (String) args.get("type")))
+                            : client.collections().create(name, (String) args.get("type"));
+                }
+                return async ? join(client.collections().createAsync(name)) : client.collections().create(name);
+            }
+            case "collections.list":
+                return async ? join(client.collections().listAsync()) : client.collections().list();
+            case "collections.get":
+                return async ? join(client.collections().getAsync((String) args.get("collection_id")))
+                        : client.collections().get((String) args.get("collection_id"));
+            case "collections.delete":
+                return async ? join(client.collections().deleteAsync((String) args.get("collection_id")))
+                        : client.collections().delete((String) args.get("collection_id"));
+            case "collections.enroll": {
+                String id = (String) args.get("collection_id");
+                Object image = args.get("image");
+                String reference = (String) args.get("reference");
+                String label = (String) args.get("label");
+                return async ? join(client.collections().enrollAsync(id, image, reference, label))
+                        : client.collections().enroll(id, image, reference, label);
+            }
+            case "collections.list_items": {
+                Integer offset = args.get("offset") == null ? null : ((Number) args.get("offset")).intValue();
+                Integer limit = args.get("limit") == null ? null : ((Number) args.get("limit")).intValue();
+                String id = (String) args.get("collection_id");
+                return async ? join(client.collections().listItemsAsync(id, offset, limit))
+                        : client.collections().listItems(id, offset, limit);
+            }
+            case "collections.delete_item":
+                return async ? join(client.collections().deleteItemAsync((String) args.get("collection_id"), (String) args.get("item_id")))
+                        : client.collections().deleteItem((String) args.get("collection_id"), (String) args.get("item_id"));
             default:
                 throw new AssertionError("unknown method " + method);
         }

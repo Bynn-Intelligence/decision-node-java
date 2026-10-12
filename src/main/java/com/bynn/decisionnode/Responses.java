@@ -97,7 +97,7 @@ final class Responses {
             Reading typed = "age".equals(booster) ? ageReading(view)
                     : "ai_generated".equals(booster) ? aiGeneratedReading(view)
                     : "face_detection".equals(booster) ? faceDetectionReading(view)
-                    : "wanted_person".equals(booster) ? wantedPersonReading(view)
+                    : "face_recognition".equals(booster) ? faceRecognitionReading(view)
                     : "ocr".equals(booster) ? ocrReading(view)
                     : null;
             if (typed != null) {
@@ -132,28 +132,35 @@ final class Responses {
     }
 
     /**
-     * A wanted_person reading: a string image, faces a whole number of at least 0, and matches a list
-     * of {box, score, reference}.
+     * A face_recognition reading: a string image, faces a whole number of at least 0, and matches a
+     * list of {box, score, collection, reference, name?, label?}, name and label strings or absent.
      */
-    private static WantedPersonReading wantedPersonReading(Map<String, Object> raw) {
+    private static FaceRecognitionReading faceRecognitionReading(Map<String, Object> raw) {
         Object image = raw.get("image");
         Long faces = integer(raw.get("faces"));
         List<Object> found = Json.asList(raw.get("matches"));
         if (!(image instanceof String) || faces == null || faces < 0 || found == null) {
             return null;
         }
-        List<WantedMatch> matches = new ArrayList<>(found.size());
+        List<FaceMatch> matches = new ArrayList<>(found.size());
         for (Object o : found) {
             Map<String, Object> m = Json.asMap(o);
-            FaceBox box = m == null ? null : faceBox(m.get("box"));
-            Double score = m == null ? null : Json.asDouble(m.get("score"));
-            Object reference = m == null ? null : m.get("reference");
-            if (box == null || score == null || !(reference instanceof String)) {
+            if (m == null) {
                 return null;
             }
-            matches.add(new WantedMatch(box, score, (String) reference));
+            FaceBox box = faceBox(m.get("box"));
+            Double score = Json.asDouble(m.get("score"));
+            Object collection = m.get("collection");
+            Object reference = m.get("reference");
+            Object name = m.get("name");
+            Object label = m.get("label");
+            if (box == null || score == null || !(collection instanceof String) || !(reference instanceof String)
+                    || (name != null && !(name instanceof String)) || (label != null && !(label instanceof String))) {
+                return null;
+            }
+            matches.add(new FaceMatch(box, score, (String) collection, (String) reference, (String) name, (String) label));
         }
-        return new WantedPersonReading((String) image, faces, Collections.unmodifiableList(matches), raw);
+        return new FaceRecognitionReading((String) image, faces, Collections.unmodifiableList(matches), raw);
     }
 
     /** A face's box: four numbers, as sent; null when a corner is missing or not a number. */

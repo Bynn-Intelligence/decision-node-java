@@ -90,6 +90,7 @@ public final class DecisionNode {
     private final Transport transport;
     private final Uploads uploads;
     private final Batches batches;
+    private final CollectionsClient collections;
     private volatile Map<String, Map<String, Object>> held = Map.of();
 
     /** A client configured from the environment. */
@@ -147,6 +148,7 @@ public final class DecisionNode {
         this.uploads = new Uploads(transport, inlineThreshold, b.uploadTimeout == null ? DEFAULT_UPLOAD_TIMEOUT : b.uploadTimeout,
                 b.clock != null ? b.clock : System::currentTimeMillis);
         this.batches = new Batches(this);
+        this.collections = new CollectionsClient(this);
     }
 
     public static Builder builder() {
@@ -1123,6 +1125,11 @@ public final class DecisionNode {
     /** The Batch API: decisions answered within 24 hours at half the price. */
     public Batches batches() {
         return batches;
+    }
+
+    /** The workspace's collections of faces: create, enroll, list and delete. */
+    public CollectionsClient collections() {
+        return collections;
     }
 
     /**

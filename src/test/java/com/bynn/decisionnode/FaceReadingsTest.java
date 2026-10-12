@@ -10,7 +10,7 @@ import java.util.List;
 import java.util.Map;
 import org.junit.jupiter.api.Test;
 
-/** The face_detection and wanted_person readings. */
+/** The face_detection and face_recognition readings. */
 class FaceReadingsTest {
     private static List<Reading> readings(String booster, String results) throws Exception {
         String body = "{\"model\":\"decisionnode-moe-0.9.0-rc1\",\"answers\":{},\"evidence\":{\"" + booster + "\":{\"version\":\""
@@ -38,15 +38,20 @@ class FaceReadingsTest {
     }
 
     @Test
-    void wantedPersonMatches() throws Exception {
-        List<Reading> r = readings("wanted_person", "[{\"image\":\"door\",\"faces\":2,\"matches\":["
-                + "{\"box\":{\"x1\":10,\"y1\":20,\"x2\":110,\"y2\":140},\"score\":0.91,\"reference\":\"wanted:2024-12345\"}]},"
+    void faceRecognitionMatches() throws Exception {
+        List<Reading> r = readings("face_recognition", "[{\"image\":\"door\",\"faces\":2,\"matches\":["
+                + "{\"box\":{\"x1\":10,\"y1\":20,\"x2\":110,\"y2\":140},\"score\":0.91,\"collection\":\"col_1\","
+                + "\"reference\":\"emp-1042\",\"label\":\"Reception\"},"
+                + "{\"box\":{\"x1\":200,\"y1\":20,\"x2\":300,\"y2\":140},\"score\":0.88,\"collection\":\"celebrities\","
+                + "\"reference\":\"Q42\",\"name\":\"A Public Figure\"}]},"
                 + "{\"image\":\"hall\",\"faces\":1,\"matches\":[]}]");
-        WantedPersonReading door = assertInstanceOf(WantedPersonReading.class, r.get(0));
-        assertEquals("wanted_person", door.booster());
+        FaceRecognitionReading door = assertInstanceOf(FaceRecognitionReading.class, r.get(0));
+        assertEquals("face_recognition", door.booster());
         assertEquals(2, door.faces());
-        assertEquals(new WantedMatch(new FaceBox(10, 20, 110, 140), 0.91, "wanted:2024-12345"), door.matches().get(0));
-        assertTrue(assertInstanceOf(WantedPersonReading.class, r.get(1)).matches().isEmpty());
+        assertEquals(new FaceMatch(new FaceBox(10, 20, 110, 140), 0.91, "col_1", "emp-1042", null, "Reception"), door.matches().get(0));
+        assertEquals(new FaceMatch(new FaceBox(200, 20, 300, 140), 0.88, "celebrities", "Q42", "A Public Figure", null),
+                door.matches().get(1));
+        assertTrue(assertInstanceOf(FaceRecognitionReading.class, r.get(1)).matches().isEmpty());
     }
 
     @Test
@@ -65,19 +70,24 @@ class FaceReadingsTest {
                 + "{\"image\":7,\"faces\":1,\"detections\":[]}]");
         assertEquals(10, detections.size());
         detections.forEach(each -> assertEquals("face_detection", assertInstanceOf(UnknownReading.class, each).booster()));
-        List<Reading> matches = readings("wanted_person", "["
+        String match = "\"box\":" + box + ",\"score\":0.9";
+        List<Reading> matches = readings("face_recognition", "["
                 + "{\"image\":\"a\",\"faces\":1},"
-                + "{\"image\":\"a\",\"faces\":1,\"matches\":[{\"box\":" + box + ",\"score\":0.9}]},"
-                + "{\"image\":\"a\",\"faces\":1,\"matches\":[{\"box\":" + box + ",\"score\":0.9,\"reference\":5}]},"
-                + "{\"image\":\"a\",\"faces\":1,\"matches\":[{\"box\":" + box + ",\"reference\":\"r\"}]},"
-                + "{\"image\":\"a\",\"faces\":1,\"matches\":[{\"score\":0.9,\"reference\":\"r\"}]}]");
-        assertEquals(5, matches.size());
-        matches.forEach(each -> assertEquals("wanted_person", assertInstanceOf(UnknownReading.class, each).booster()));
+                + "{\"image\":\"a\",\"matches\":[]},"
+                + "{\"image\":\"a\",\"faces\":1,\"matches\":[{" + match + ",\"reference\":\"r\"}]},"
+                + "{\"image\":\"a\",\"faces\":1,\"matches\":[{" + match + ",\"collection\":5,\"reference\":\"r\"}]},"
+                + "{\"image\":\"a\",\"faces\":1,\"matches\":[{" + match + ",\"collection\":\"c\"}]},"
+                + "{\"image\":\"a\",\"faces\":1,\"matches\":[{" + match + ",\"collection\":\"c\",\"reference\":7}]},"
+                + "{\"image\":\"a\",\"faces\":1,\"matches\":[{" + match + ",\"collection\":\"c\",\"reference\":\"r\",\"name\":3}]},"
+                + "{\"image\":\"a\",\"faces\":1,\"matches\":[{" + match + ",\"collection\":\"c\",\"reference\":\"r\",\"label\":true}]},"
+                + "{\"image\":\"a\",\"faces\":1,\"matches\":[{\"box\":" + box + ",\"collection\":\"c\",\"reference\":\"r\"}]}]");
+        assertEquals(9, matches.size());
+        matches.forEach(each -> assertEquals("face_recognition", assertInstanceOf(UnknownReading.class, each).booster()));
     }
 
     @Test
-    void theThresholdOptionIsSentAsGiven() {
-        Booster b = Booster.of("wanted_person").options(Map.of("threshold", 0.85));
-        assertEquals(Map.of("name", "wanted_person", "options", Map.of("threshold", 0.85)), b.wire());
+    void theCollectionAndThresholdOptionsAreSentAsGiven() {
+        Booster b = Booster.of("face_recognition").options(Map.of("collection", "col_1", "threshold", 0.85));
+        assertEquals(Map.of("name", "face_recognition", "options", Map.of("collection", "col_1", "threshold", 0.85)), b.wire());
     }
 }

@@ -10,6 +10,12 @@ Implements version 1.3 of the DecisionNode SDK specification: boosters and fine-
 
 ### Added
 
+- Collections of faces, on `DecisionNode.collections()`: `create`, `list`, `get`, `delete`,
+  `enroll`, `listItems` and `deleteItem` and their async forms, each returning the API's object as
+  sent. `create` and `enroll` retry only on 429 and 529. The name, type, reference, label and the
+  image are checked before sending, with the API's 422 entries. The `face_recognition` booster's
+  reading is a `FaceRecognitionReading` (`image`, `faces`, `matches`, each a `FaceMatch` with its
+  box, score, collection, reference, and name or label).
 - Several places in one answer: `point(instructions, image, units, max)` and
   `box(instructions, image, units, max)` with `max` an integer from 2 to 16, sent only when given
   and checked before sending (`int_type`, `greater_than_equal`, `less_than_equal`, a

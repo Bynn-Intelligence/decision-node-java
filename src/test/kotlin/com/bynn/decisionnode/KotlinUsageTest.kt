@@ -111,7 +111,7 @@ class KotlinUsageTest {
             is AiGeneratedReading -> "generated ${reading.generated()}"
             is OcrReading -> "text ${reading.text()}"
             is FaceDetectionReading -> "faces ${reading.faces()}"
-            is WantedPersonReading -> "matches ${reading.matches().size}"
+            is FaceRecognitionReading -> "matches ${reading.matches().size}"
             is UnknownReading -> "unknown ${reading.booster()}"
         }
         assertEquals("age 27", text)
