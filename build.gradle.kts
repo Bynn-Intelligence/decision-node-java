@@ -123,8 +123,8 @@ publishing {
         }
     }
     repositories {
-        // The release workflow's dry-run publishes here, a Maven-layout directory; its publish
-        // job signs and uploads exactly these files, never a rebuild.
+        // The publish workflow writes the publication here, a Maven-layout directory, then
+        // signs these files and uploads them to Maven Central.
         maven {
             name = "staging"
             url = uri(layout.buildDirectory.dir("staging-deploy"))
