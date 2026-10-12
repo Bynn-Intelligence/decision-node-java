@@ -14,7 +14,7 @@ Gradle:
 
 ```kotlin
 dependencies {
-    implementation("com.bynn:decisionnode:0.3.0")
+    implementation("com.bynn:decisionnode:0.3.1")
 }
 ```
 
@@ -24,7 +24,7 @@ Maven:
 <dependency>
   <groupId>com.bynn</groupId>
   <artifactId>decisionnode</artifactId>
-  <version>0.3.0</version>
+  <version>0.3.1</version>
 </dependency>
 ```
 
