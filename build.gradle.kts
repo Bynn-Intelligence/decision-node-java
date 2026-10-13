@@ -93,7 +93,7 @@ publishing {
             from(components["java"])
             pom {
                 name.set("DecisionNode")
-                description.set("Java and Kotlin client for the DecisionNode API.")
+                description.set("Java and Kotlin client for the DecisionNode decision engine API.")
                 url.set("https://github.com/Bynn-Intelligence/decision-node-java")
                 licenses {
                     license {

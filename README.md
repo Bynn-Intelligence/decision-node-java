@@ -1,5 +1,7 @@
 # DecisionNode Java SDK
 
+[DecisionNode](https://decisionnode.com) is a decision engine: send it text, JSON or images with a question, and it answers with calibrated probabilities.
+
 The official Java and Kotlin client for the [DecisionNode](https://decisionnode.com) API: ask
 typed questions about any state and get probabilities back.
 
