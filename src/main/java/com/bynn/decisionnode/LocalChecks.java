@@ -901,9 +901,10 @@ final class LocalChecks {
     static void collectionCreate(Object type, Object name) {
         List<Map<String, Object>> entries = new ArrayList<>();
         if (!"face".equals(type)) {
-            entries.add(entry("literal_error", List.of("body", "type"), "Input should be 'face'", type, Map.of("expected", "'face'")));
+            entries.add(entry("literal_error", List.of("body", "type"), "Input should be 'face'", echoed(type),
+                    Map.of("expected", "'face'")));
         }
-        entries.addAll(stringEntries(List.of("body", "name"), name, 1, COLLECTION_NAME_MAX, null));
+        entries.addAll(stringEntries(List.of("body", "name"), name, COLLECTION_NAME_MAX, null));
         if (!entries.isEmpty()) {
             throw invalid(entries);
         }
@@ -911,47 +912,61 @@ final class LocalChecks {
 
     /**
      * An enrollment: an image, a reference of 1 to 64 of {@code [A-Za-z0-9_.:-]} (its length first,
-     * then the pattern, which an empty reference fails) and a label of at most 128 characters when
-     * given (the API's 422 entries). Of the image only a URL's rules are checked here.
+     * then the pattern) and, when given, a label of 1 to 128 characters (the API's 422 entries). Of
+     * the image only a URL's rules are checked here.
      */
     static void collectionEnroll(Object image, Object reference, Object label) {
         List<Map<String, Object>> entries = new ArrayList<>();
         if (image == null) {
-            Map<String, Object> input = new LinkedHashMap<>();
-            input.put("reference", reference);
-            entries.add(entry("missing", List.of("body", "image"), "Field required", input, null));
+            entries.add(entry("missing", List.of("body", "image"), "Field required", null, null));
         }
-        if (reference == null) {
-            entries.add(entry("missing", List.of("body", "reference"), "Field required", null, null));
-        } else {
-            entries.addAll(stringEntries(List.of("body", "reference"), reference, 0, ITEM_REFERENCE_MAX, ITEM_REFERENCE_PATTERN));
-        }
+        entries.addAll(stringEntries(List.of("body", "reference"), reference, ITEM_REFERENCE_MAX, ITEM_REFERENCE_PATTERN));
         if (label != null) {
-            entries.addAll(stringEntries(List.of("body", "label"), label, 0, ITEM_LABEL_MAX, null));
+            entries.addAll(stringEntries(List.of("body", "label"), label, ITEM_LABEL_MAX, null));
         }
         if (!entries.isEmpty()) {
             throw invalid(entries);
         }
     }
 
+    /** How many characters of a string input a collections 422 entry echoes. */
+    static final int ECHO_CHARS = 64;
+
     /**
-     * A string field's 422 entry, as the API answers it: missing, not a string, too short, too
-     * long (both in characters, Unicode code points), or not matching {@code pattern}.
+     * An input as a collections 422 entry echoes it, as the API does: a string cut to its first 64
+     * characters (Unicode code points) with "..." added when it was longer, an object or an array
+     * never (null), anything else as given.
      */
-    private static List<Map<String, Object>> stringEntries(List<Object> loc, Object value, int least, int most, String pattern) {
+    static Object echoed(Object value) {
+        if (value instanceof String text) {
+            if (text.codePointCount(0, text.length()) <= ECHO_CHARS) {
+                return text;
+            }
+            return text.substring(0, text.offsetByCodePoints(0, ECHO_CHARS)) + "...";
+        }
+        if (value instanceof Map || value instanceof List) {
+            return null;
+        }
+        return value;
+    }
+
+    /**
+     * A collections string field's 422 entry, as the API answers it: missing, not a string, empty,
+     * longer than {@code most} characters (Unicode code points), or not matching {@code pattern};
+     * its input echoed within bounds.
+     */
+    private static List<Map<String, Object>> stringEntries(List<Object> loc, Object value, int most, String pattern) {
         if (value == null) {
-            return least > 0 ? List.of(entry("missing", loc, "Field required", null, null)) : List.of();
+            return List.of(entry("missing", loc, "Field required", null, null));
         }
         if (!(value instanceof String text)) {
-            return List.of(entry("string_type", loc, "Input should be a valid string", value, null));
+            return List.of(entry("string_type", loc, "Input should be a valid string", echoed(value), null));
         }
-        int length = text.codePointCount(0, text.length());
-        if (length < least) {
-            return List.of(entry("string_too_short", loc, "String should have at least " + least + " character" + (least == 1 ? "" : "s"),
-                    text, Map.of("min_length", least)));
+        if (text.isEmpty()) {
+            return List.of(entry("string_too_short", loc, "String should have at least 1 character", text, Map.of("min_length", 1)));
         }
-        if (length > most) {
-            return List.of(entry("string_too_long", loc, "String should have at most " + most + " characters", text,
+        if (text.codePointCount(0, text.length()) > most) {
+            return List.of(entry("string_too_long", loc, "String should have at most " + most + " characters", echoed(text),
                     Map.of("max_length", most)));
         }
         if (pattern != null && !java.util.regex.Pattern.compile(pattern).matcher(text).matches()) {

@@ -153,7 +153,8 @@ class CollectionsTest {
         assertEquals("string_too_long", entryType(() -> collections().create("x".repeat(81))));
         collections().create("𠀀".repeat(80));
         Image badge = Image.fromUrl("badge", "https://files.example.com/b.jpg");
-        assertEquals("string_pattern_mismatch", entryType(() -> collections().enroll("col_1", badge, "")));
+        assertEquals("string_too_short", entryType(() -> collections().enroll("col_1", badge, "")));
+        assertEquals("string_too_short", entryType(() -> collections().enroll("col_1", badge, "emp-1042", "")));
         assertEquals("string_too_long", entryType(() -> collections().enroll("col_1", badge, "r".repeat(65))));
         ValidationError pattern = assertThrows(ValidationError.class, () -> collections().enroll("col_1", badge, "emp 1042"));
         Map<?, ?> e = (Map<?, ?>) pattern.entries().get(0);
@@ -186,6 +187,30 @@ class CollectionsTest {
         assertEquals(DecisionNodeError.class, e.getClass());
         assertEquals(409, e.status());
         assertInstanceOf(DecisionNodeError.class, e);
+    }
+
+    @Test
+    void entriesEchoTheirInputWithinBounds() {
+        ValidationError name = assertThrows(ValidationError.class, () -> collections().create("x".repeat(81)));
+        assertEquals("x".repeat(64) + "...", ((Map<?, ?>) name.entries().get(0)).get("input"));
+        // Cut by code points, never inside a pair of UTF-16 units.
+        String wide = "\uD840\uDC00".repeat(130);
+        Image badge = Image.fromUrl("badge", "https://files.example.com/b.jpg");
+        ValidationError label = assertThrows(ValidationError.class, () -> collections().enroll("col_1", badge, "emp-1042", wide));
+        assertEquals("\uD840\uDC00".repeat(64) + "...", ((Map<?, ?>) label.entries().get(0)).get("input"));
+        ValidationError empty = assertThrows(ValidationError.class, () -> collections().enroll("col_1", badge, ""));
+        assertEquals(Map.of("type", "string_too_short", "loc", List.of("body", "reference"), "msg",
+                "String should have at least 1 character", "input", "", "ctx", Map.of("min_length", 1)), empty.entries().get(0));
+        assertEquals("r".repeat(64), LocalChecks.echoed("r".repeat(64)));
+        assertNull(LocalChecks.echoed(Map.of("a", 1)));
+        assertNull(LocalChecks.echoed(List.of(1)));
+        assertEquals(7, LocalChecks.echoed(7));
+        assertEquals(true, LocalChecks.echoed(true));
+        ValidationError noImage = assertThrows(ValidationError.class, () -> collections().enroll("col_1", null, "emp-1042"));
+        Map<?, ?> missing = (Map<?, ?>) noImage.entries().get(0);
+        assertEquals("missing", missing.get("type"));
+        assertTrue(missing.containsKey("input"));
+        assertNull(missing.get("input"));
     }
 
     private static String entryType(Runnable call) {
