@@ -12,9 +12,11 @@ import java.util.Map;
  * @param matches the faces that match an item, in the order sent, each with its box, score, the
  *                collection, the item's reference and its name or label; empty when nothing
  *                matches
+ * @param collectionName the searched collection's display name, for your own collection; null when
+ *                absent
  * @param raw     the reading exactly as sent
  */
-public record FaceRecognitionReading(String image, long faces, List<FaceMatch> matches, Map<String, Object> raw)
+public record FaceRecognitionReading(String image, long faces, List<FaceMatch> matches, String collectionName, Map<String, Object> raw)
         implements Reading {
     @Override
     public String booster() {

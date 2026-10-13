@@ -2,6 +2,7 @@ package com.bynn.decisionnode;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertInstanceOf;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.net.http.HttpHeaders;
@@ -39,19 +40,40 @@ class FaceReadingsTest {
 
     @Test
     void faceRecognitionMatches() throws Exception {
-        List<Reading> r = readings("face_recognition", "[{\"image\":\"door\",\"faces\":2,\"matches\":["
+        List<Reading> r = readings("face_recognition", "[{\"image\":\"door\",\"faces\":2,\"collection_name\":\"Staff\",\"matches\":["
                 + "{\"box\":{\"x1\":10,\"y1\":20,\"x2\":110,\"y2\":140},\"score\":0.91,\"collection\":\"col_1\","
-                + "\"reference\":\"emp-1042\",\"label\":\"Reception\"},"
+                + "\"reference\":\"emp-1042\",\"label\":\"Reception\",\"collection_name\":\"Staff\",\"metadata\":{\"desk\":4}},"
                 + "{\"box\":{\"x1\":200,\"y1\":20,\"x2\":300,\"y2\":140},\"score\":0.88,\"collection\":\"celebrities\","
                 + "\"reference\":\"Q42\",\"name\":\"A Public Figure\"}]},"
                 + "{\"image\":\"hall\",\"faces\":1,\"matches\":[]}]");
         FaceRecognitionReading door = assertInstanceOf(FaceRecognitionReading.class, r.get(0));
         assertEquals("face_recognition", door.booster());
         assertEquals(2, door.faces());
-        assertEquals(new FaceMatch(new FaceBox(10, 20, 110, 140), 0.91, "col_1", "emp-1042", null, "Reception"), door.matches().get(0));
-        assertEquals(new FaceMatch(new FaceBox(200, 20, 300, 140), 0.88, "celebrities", "Q42", "A Public Figure", null),
+        assertEquals("Staff", door.collectionName());
+        assertEquals(new FaceMatch(new FaceBox(10, 20, 110, 140), 0.91, "col_1", "emp-1042", null, "Reception", "Staff", Map.of("desk", 4)),
+                door.matches().get(0));
+        assertEquals(new FaceMatch(new FaceBox(200, 20, 300, 140), 0.88, "celebrities", "Q42", "A Public Figure", null, null, null),
                 door.matches().get(1));
-        assertTrue(assertInstanceOf(FaceRecognitionReading.class, r.get(1)).matches().isEmpty());
+        FaceRecognitionReading hall = assertInstanceOf(FaceRecognitionReading.class, r.get(1));
+        assertTrue(hall.matches().isEmpty());
+        assertNull(hall.collectionName());
+    }
+
+    @Test
+    void faceRecognitionNewFieldsOfAnotherTypeAreGeneric() throws Exception {
+        String match = "\"box\":{\"x1\":1,\"y1\":2,\"x2\":3,\"y2\":4},\"score\":0.9,\"collection\":\"c\",\"reference\":\"r\"";
+        List<Reading> r = readings("face_recognition", "["
+                + "{\"image\":\"a\",\"faces\":1,\"collection_name\":5,\"matches\":[]},"
+                + "{\"image\":\"a\",\"faces\":1,\"matches\":[{" + match + ",\"collection_name\":[]}]},"
+                + "{\"image\":\"a\",\"faces\":1,\"matches\":[{" + match + ",\"metadata\":[1]}]},"
+                + "{\"image\":\"a\",\"faces\":1,\"matches\":[{" + match + ",\"metadata\":\"x\"}]},"
+                + "{\"image\":\"a\",\"faces\":1,\"matches\":[{" + match + ",\"metadata\":null,\"collection_name\":null}]}]");
+        for (int i = 0; i < 4; i++) {
+            assertInstanceOf(UnknownReading.class, r.get(i), "reading " + i);
+        }
+        FaceMatch ok = assertInstanceOf(FaceRecognitionReading.class, r.get(4)).matches().get(0);
+        assertNull(ok.metadata());
+        assertNull(ok.collectionName());
     }
 
     @Test

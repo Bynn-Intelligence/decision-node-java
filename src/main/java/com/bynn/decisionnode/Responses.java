@@ -133,13 +133,17 @@ final class Responses {
 
     /**
      * A face_recognition reading: a string image, faces a whole number of at least 0, and matches a
-     * list of {box, score, collection, reference, name?, label?}, name and label strings or absent.
+     * list of {box, score, collection, reference, name?, label?, collection_name?, metadata?}: name,
+     * label and collection_name strings or absent, metadata an object or absent; the reading's own
+     * collection_name a string or absent.
      */
     private static FaceRecognitionReading faceRecognitionReading(Map<String, Object> raw) {
         Object image = raw.get("image");
         Long faces = integer(raw.get("faces"));
         List<Object> found = Json.asList(raw.get("matches"));
-        if (!(image instanceof String) || faces == null || faces < 0 || found == null) {
+        Object collectionName = raw.get("collection_name");
+        if (!(image instanceof String) || faces == null || faces < 0 || found == null
+                || (collectionName != null && !(collectionName instanceof String))) {
             return null;
         }
         List<FaceMatch> matches = new ArrayList<>(found.size());
@@ -154,13 +158,19 @@ final class Responses {
             Object reference = m.get("reference");
             Object name = m.get("name");
             Object label = m.get("label");
+            Object matchCollection = m.get("collection_name");
+            Object metadata = m.get("metadata");
             if (box == null || score == null || !(collection instanceof String) || !(reference instanceof String)
-                    || (name != null && !(name instanceof String)) || (label != null && !(label instanceof String))) {
+                    || (name != null && !(name instanceof String)) || (label != null && !(label instanceof String))
+                    || (matchCollection != null && !(matchCollection instanceof String))
+                    || (metadata != null && Json.asMap(metadata) == null)) {
                 return null;
             }
-            matches.add(new FaceMatch(box, score, (String) collection, (String) reference, (String) name, (String) label));
+            matches.add(new FaceMatch(box, score, (String) collection, (String) reference, (String) name, (String) label,
+                    (String) matchCollection, metadata == null ? null : Collections.unmodifiableMap(Json.asMap(metadata))));
         }
-        return new FaceRecognitionReading((String) image, faces, Collections.unmodifiableList(matches), raw);
+        return new FaceRecognitionReading((String) image, faces, Collections.unmodifiableList(matches), (String) collectionName,
+                raw);
     }
 
     /** A face's box: four numbers, as sent; null when a corner is missing or not a number. */

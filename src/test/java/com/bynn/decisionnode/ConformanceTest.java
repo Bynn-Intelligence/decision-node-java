@@ -1090,6 +1090,7 @@ class ConformanceTest {
             n.put("kind", "face_recognition");
             n.put("image", w.image());
             n.put("faces", w.faces());
+            n.put("collection_name", w.collectionName());
             List<Object> list = new ArrayList<>();
             for (FaceMatch m : w.matches()) {
                 Map<String, Object> e = new LinkedHashMap<>();
@@ -1099,6 +1100,8 @@ class ConformanceTest {
                 e.put("reference", m.reference());
                 e.put("name", m.name());
                 e.put("label", m.label());
+                e.put("collection_name", m.collectionName());
+                e.put("metadata", m.metadata());
                 list.add(e);
             }
             n.put("matches", list);

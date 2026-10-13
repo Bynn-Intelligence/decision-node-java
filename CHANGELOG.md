@@ -10,6 +10,10 @@ Implements version 1.3 of the DecisionNode SDK specification: boosters and fine-
 
 ### Added
 
+- `FaceRecognitionReading.collectionName()` and, on each `FaceMatch`, `collectionName()` and
+  `metadata()` (the item's metadata as sent), each null when absent. A reading whose
+  `collection_name` is not a string, or a match whose `metadata` is not an object, is an
+  `UnknownReading`.
 - Collection items: `enroll` takes the item's `metadata` (sent only when given), `updateItem`
   changes an item's reference, label or metadata with an `ItemUpdate` (only the fields set are
   sent; `clearLabel()` removes the label; metadata replaces the whole object) under its own
