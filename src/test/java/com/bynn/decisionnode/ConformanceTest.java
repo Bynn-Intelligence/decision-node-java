@@ -1302,6 +1302,7 @@ class ConformanceTest {
             retry = o.retryAfter();
         }
         n.put("retry_after", retry);
+        n.put("details", e.details());
         Map<String, Object> boosters = new LinkedHashMap<>();
         e.boosters().forEach((name, st) -> {
             Map<String, Object> b = new LinkedHashMap<>();
@@ -1537,15 +1538,38 @@ class ConformanceTest {
                 Object image = args.get("image");
                 String reference = (String) args.get("reference");
                 String label = (String) args.get("label");
-                return async ? join(client.collections().enrollAsync(id, image, reference, label))
-                        : client.collections().enroll(id, image, reference, label);
+                @SuppressWarnings("unchecked")
+                Map<String, Object> metadata = (Map<String, Object>) args.get("metadata");
+                return async ? join(client.collections().enrollAsync(id, image, reference, label, metadata))
+                        : client.collections().enroll(id, image, reference, label, metadata);
+            }
+            case "collections.update_item": {
+                // A field the case leaves out is not set; a label given as null clears it.
+                ItemUpdate.Builder u = ItemUpdate.builder();
+                if (args.containsKey("reference")) {
+                    u.reference((String) args.get("reference"));
+                }
+                if (args.containsKey("label")) {
+                    u.label((String) args.get("label"));
+                }
+                if (args.containsKey("metadata")) {
+                    @SuppressWarnings("unchecked")
+                    Map<String, Object> m = (Map<String, Object>) args.get("metadata");
+                    u.metadata(m);
+                }
+                String id = (String) args.get("collection_id");
+                String item = (String) args.get("item_id");
+                return async ? join(client.collections().updateItemAsync(id, item, u.build()))
+                        : client.collections().updateItem(id, item, u.build());
             }
             case "collections.list_items": {
                 Integer offset = args.get("offset") == null ? null : ((Number) args.get("offset")).intValue();
                 Integer limit = args.get("limit") == null ? null : ((Number) args.get("limit")).intValue();
                 String id = (String) args.get("collection_id");
-                return async ? join(client.collections().listItemsAsync(id, offset, limit))
-                        : client.collections().listItems(id, offset, limit);
+                String reference = (String) args.get("reference");
+                String prefix = (String) args.get("reference_prefix");
+                return async ? join(client.collections().listItemsAsync(id, offset, limit, reference, prefix))
+                        : client.collections().listItems(id, offset, limit, reference, prefix);
             }
             case "collections.delete_item":
                 return async ? join(client.collections().deleteItemAsync((String) args.get("collection_id"), (String) args.get("item_id")))

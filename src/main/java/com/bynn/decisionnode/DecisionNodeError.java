@@ -82,6 +82,18 @@ public class DecisionNodeError extends RuntimeException {
         return body;
     }
 
+    /**
+     * {@code detail.details} of the response body when it is an object, for example
+     * {@code {"reason": "enrollment_unpriced"}}; empty otherwise, and when no response was received.
+     */
+    @SuppressWarnings("unchecked")
+    public Map<String, Object> details() {
+        if (body instanceof Map<?, ?> b && b.get("detail") instanceof Map<?, ?> d && d.get("details") instanceof Map<?, ?> m) {
+            return Collections.unmodifiableMap((Map<String, Object>) m);
+        }
+        return Collections.emptyMap();
+    }
+
     /** The response headers, keyed by lower-case name. Empty when no response was received. */
     public Map<String, List<String>> headers() {
         return headers;

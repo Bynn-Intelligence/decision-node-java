@@ -916,6 +916,11 @@ final class LocalChecks {
      * the image only a URL's rules are checked here.
      */
     static void collectionEnroll(Object image, Object reference, Object label) {
+        collectionEnroll(image, reference, label, null);
+    }
+
+    /** {@link #collectionEnroll(Object, Object, Object)} with the item's metadata, checked when given. */
+    static void collectionEnroll(Object image, Object reference, Object label, Object metadata) {
         List<Map<String, Object>> entries = new ArrayList<>();
         if (image == null) {
             entries.add(entry("missing", List.of("body", "image"), "Field required", null, null));
@@ -924,9 +929,112 @@ final class LocalChecks {
         if (label != null) {
             entries.addAll(stringEntries(List.of("body", "label"), label, ITEM_LABEL_MAX, null));
         }
+        if (metadata != null) {
+            entries.addAll(metadataEntries(metadata));
+        }
         if (!entries.isEmpty()) {
             throw invalid(entries);
         }
+    }
+
+    /**
+     * An item's update: only the fields given are checked, as an enrollment checks them, and at
+     * least one must be given.
+     */
+    static void collectionUpdate(boolean hasReference, Object reference, boolean hasLabel, Object label, boolean hasMetadata,
+            Object metadata) {
+        List<Map<String, Object>> entries = new ArrayList<>();
+        if (hasReference) {
+            entries.addAll(stringEntries(List.of("body", "reference"), reference, ITEM_REFERENCE_MAX, ITEM_REFERENCE_PATTERN));
+        }
+        if (hasLabel && label != null) {
+            entries.addAll(stringEntries(List.of("body", "label"), label, ITEM_LABEL_MAX, null));
+        }
+        if (hasMetadata) {
+            entries.addAll(metadataEntries(metadata));
+        }
+        if (!hasReference && !hasLabel && !hasMetadata) {
+            entries.add(entry("missing", List.of("body"), "Send reference, label, metadata or any of them", null, null));
+        }
+        if (!entries.isEmpty()) {
+            throw invalid(entries);
+        }
+    }
+
+    /** An item's metadata: at most 20 keys, each 1 to 40 of a-z, 0-9 and _, a text at most 500 characters. */
+    static final int METADATA_KEYS = 20;
+    static final int METADATA_KEY_CHARS = 40;
+    static final int METADATA_TEXT_CHARS = 500;
+    private static final Pattern METADATA_KEY = Pattern.compile("[a-z0-9_]{1,40}");
+
+    /**
+     * An item's metadata's 422 entries, the limits a client may hold: an object of at most 20 keys
+     * (that alone, before any key is read), each key 1 to 40 of a-z, 0-9 and _, each value a text
+     * of at most 500 characters, a number or a boolean. A text's control characters, a number's
+     * range and the total size are the server's to judge.
+     */
+    static List<Map<String, Object>> metadataEntries(Object metadata) {
+        List<Object> loc = List.of("body", "metadata");
+        if (!(metadata instanceof Map<?, ?> m)) {
+            return List.of(entry("value_error", loc, "Metadata is an object of keys and values.", echoed(metadata), null));
+        }
+        if (m.size() > METADATA_KEYS) {
+            return List.of(entry("value_error", loc, "Metadata holds at most " + METADATA_KEYS + " keys.", null, null));
+        }
+        List<Map<String, Object>> out = new ArrayList<>();
+        for (Map.Entry<?, ?> e : m.entrySet()) {
+            String key = String.valueOf(e.getKey());
+            Object value = e.getValue();
+            if (!(e.getKey() instanceof String) || !METADATA_KEY.matcher(key).matches()) {
+                out.add(entry("value_error", loc, "A metadata key is 1 to " + METADATA_KEY_CHARS + " characters of a-z, 0-9 and _: \""
+                        + shownKey(key) + "\".", null, null));
+            } else if (value instanceof String text) {
+                if (text.codePointCount(0, text.length()) > METADATA_TEXT_CHARS) {
+                    out.add(entry("value_error", append(loc, key), "A metadata text is at most " + METADATA_TEXT_CHARS + " characters.",
+                            echoed(text), null));
+                }
+            } else if (!(value instanceof Number) && !(value instanceof Boolean)) {
+                out.add(entry("value_error", append(loc, key), "A metadata value is a text, a number or true or false.", echoed(value),
+                        null));
+            }
+        }
+        return out;
+    }
+
+    /** A metadata key as a message shows it: its first 40 characters, control characters as ?, then "..." when longer. */
+    private static String shownKey(String key) {
+        StringBuilder out = new StringBuilder();
+        int[] points = key.codePoints().toArray();
+        for (int i = 0; i < Math.min(points.length, METADATA_KEY_CHARS); i++) {
+            out.appendCodePoint(Character.getType(points[i]) == Character.CONTROL ? '?' : points[i]);
+        }
+        return points.length > METADATA_KEY_CHARS ? out + "..." : out.toString();
+    }
+
+    /**
+     * A reference or reference_prefix of the items list, checked as the API checks it: 1 to 64 of
+     * A-Z, a-z, 0-9, _, ., : and -.
+     */
+    static void referenceQuery(String name, String value) {
+        if (!Pattern.compile(ITEM_REFERENCE_PATTERN).matcher(value).matches()) {
+            throw usage("Query parameter " + name + " must be 1 to 64 characters of A-Z, a-z, 0-9, _, ., : and -, got "
+                    + printable(value, 64) + ".", null);
+        }
+    }
+
+    /** A caller's value as an API message echoes it: its first characters, any but printable ASCII as \\u{hex}, then "...". */
+    static String printable(String value, int most) {
+        StringBuilder out = new StringBuilder();
+        int[] points = value.codePoints().toArray();
+        for (int i = 0; i < Math.min(points.length, most); i++) {
+            int c = points[i];
+            if (c >= 0x20 && c <= 0x7E) {
+                out.append((char) c);
+            } else {
+                out.append("\\u{").append(Integer.toHexString(c)).append('}');
+            }
+        }
+        return points.length > most ? out + "..." : out.toString();
     }
 
     /** How many characters of a string input a collections 422 entry echoes. */

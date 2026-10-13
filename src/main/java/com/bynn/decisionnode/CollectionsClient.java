@@ -109,10 +109,24 @@ public final class CollectionsClient {
     }
 
     public CompletableFuture<Map<String, Object>> enrollAsync(String collectionId, Object image, String reference, String label) {
+        return enrollAsync(collectionId, image, reference, label, null);
+    }
+
+    /**
+     * {@link #enroll(String, Object, String, String)} with the item's {@code metadata}, sent only
+     * when given: at most 20 keys of 1 to 40 of {@code a-z 0-9 _}, each a text of at most 500
+     * characters, a number or a boolean.
+     */
+    public Map<String, Object> enroll(String collectionId, Object image, String reference, String label, Map<String, ?> metadata) {
+        return Transport.await(enrollAsync(collectionId, image, reference, label, metadata));
+    }
+
+    public CompletableFuture<Map<String, Object>> enrollAsync(String collectionId, Object image, String reference, String label,
+            Map<String, ?> metadata) {
         String path;
         try {
             path = path(collectionId) + "/items";
-            LocalChecks.collectionEnroll(image, reference, label);
+            LocalChecks.collectionEnroll(image, reference, label, metadata);
             // Only a URL's rules are a decision's here; every other fault of the picture is the
             // server's to find (its 422 image_unreadable).
             if (image instanceof Image img && img.url() != null) {
@@ -128,8 +142,35 @@ public final class CollectionsClient {
             if (label != null) {
                 body.put("label", label);
             }
+            if (metadata != null) {
+                body.put("metadata", metadata);
+            }
             return t().idempotent("POST", path, Json.write(body));
         }).thenApply(Transport.Response::object);
+    }
+
+    /**
+     * {@code PATCH /v1/collections/{id}/items/{item_id}}: changes the fields the update sets, and
+     * returns the item as sent. It carries an {@code Idempotency-Key} and retries as
+     * {@link #enroll} does.
+     */
+    public Map<String, Object> updateItem(String collectionId, String itemId, ItemUpdate update) {
+        return Transport.await(updateItemAsync(collectionId, itemId, update));
+    }
+
+    public CompletableFuture<Map<String, Object>> updateItemAsync(String collectionId, String itemId, ItemUpdate update) {
+        String path;
+        byte[] body;
+        try {
+            Map<String, Object> f = update == null ? Map.of() : update.fields();
+            LocalChecks.collectionUpdate(f.containsKey("reference"), f.get("reference"), f.containsKey("label"), f.get("label"),
+                    f.containsKey("metadata"), f.get("metadata"));
+            path = path(collectionId) + "/items/" + segment(itemId, "itemId");
+            body = Json.write(f);
+        } catch (RuntimeException e) {
+            return CompletableFuture.failedFuture(e);
+        }
+        return t().idempotent("PATCH", path, body).thenApply(Transport.Response::object);
     }
 
     /** {@code GET /v1/collections/{id}/items}: the first page with the server's default size. */
@@ -143,10 +184,34 @@ public final class CollectionsClient {
     }
 
     public CompletableFuture<Map<String, Object>> listItemsAsync(String collectionId, Integer offset, Integer limit) {
+        return listItemsAsync(collectionId, offset, limit, null, null);
+    }
+
+    /**
+     * {@code GET /v1/collections/{id}/items} with an exact {@code reference} or a
+     * {@code referencePrefix} (one of them, each 1 to 64 of {@code A-Z a-z 0-9 _ . : -}); null leaves
+     * a parameter out. The page, as sent, says whether its total was capped.
+     */
+    public Map<String, Object> listItems(String collectionId, Integer offset, Integer limit, String reference,
+            String referencePrefix) {
+        return Transport.await(listItemsAsync(collectionId, offset, limit, reference, referencePrefix));
+    }
+
+    public CompletableFuture<Map<String, Object>> listItemsAsync(String collectionId, Integer offset, Integer limit, String reference,
+            String referencePrefix) {
         StringBuilder q = new StringBuilder();
         String path;
         try {
             LocalChecks.listParams(offset, limit);
+            if (reference != null && referencePrefix != null) {
+                throw LocalChecks.usage("Send query parameter reference or reference_prefix, not both.", null);
+            }
+            if (reference != null) {
+                LocalChecks.referenceQuery("reference", reference);
+            }
+            if (referencePrefix != null) {
+                LocalChecks.referenceQuery("reference_prefix", referencePrefix);
+            }
             path = path(collectionId) + "/items";
         } catch (RuntimeException e) {
             return CompletableFuture.failedFuture(e);
@@ -156,6 +221,12 @@ public final class CollectionsClient {
         }
         if (limit != null) {
             q.append(q.length() > 0 ? "&" : "").append("limit=").append(limit);
+        }
+        if (reference != null) {
+            q.append(q.length() > 0 ? "&" : "").append("reference=").append(segment(reference, "reference"));
+        }
+        if (referencePrefix != null) {
+            q.append(q.length() > 0 ? "&" : "").append("reference_prefix=").append(segment(referencePrefix, "referencePrefix"));
         }
         return call("GET", path + (q.length() > 0 ? "?" + q : ""), Transport.Policy.DEFAULT);
     }

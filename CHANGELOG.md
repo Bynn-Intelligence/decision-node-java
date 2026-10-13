@@ -10,6 +10,12 @@ Implements version 1.3 of the DecisionNode SDK specification: boosters and fine-
 
 ### Added
 
+- Collection items: `enroll` takes the item's `metadata` (sent only when given), `updateItem`
+  changes an item's reference, label or metadata with an `ItemUpdate` (only the fields set are
+  sent; `clearLabel()` removes the label; metadata replaces the whole object) under its own
+  `Idempotency-Key`, and `listItems` filters by `reference` or `referencePrefix`. Metadata, the
+  filters and an update with no field are checked before sending. `DecisionNodeError.details()`
+  holds the error's `detail.details`; a 529 for an unpriced enrollment is never retried.
 - Collections of faces, on `DecisionNode.collections()`: `create`, `list`, `get`, `delete`,
   `enroll`, `listItems` and `deleteItem` and their async forms, each returning the API's object as
   sent. `create` and `enroll` send an `Idempotency-Key`, a new UUID for each call and the same on

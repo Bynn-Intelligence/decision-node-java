@@ -213,6 +213,110 @@ class CollectionsTest {
         assertNull(missing.get("input"));
     }
 
+    @Test
+    void enrollSendsMetadataOnlyWhenGiven() throws IOException {
+        reply = n -> new Reply(200, "{\"id\":\"itm_1\"}");
+        Image badge = Image.fromUrl("badge", "https://files.example.com/b.jpg");
+        collections().enroll("col_1", badge, "emp-1042", null, Map.of("desk", 4));
+        assertEquals(Map.of("desk", 4), json(seen.poll().body()).get("metadata"));
+        collections().enroll("col_1", badge, "emp-1042");
+        assertFalse(json(seen.poll().body()).containsKey("metadata"));
+    }
+
+    @Test
+    void updateItemSendsOnlyTheFieldsSetWithItsOwnKey() throws IOException {
+        reply = n -> n == 1 ? new Reply(409, "{\"detail\":{\"error_type\":\"idempotency_in_progress\",\"message\":\"x\"}}")
+                : new Reply(200, "{\"id\":\"itm_1\",\"label\":null}");
+        Map<String, Object> item = collections().updateItem("col_1", "itm_1", ItemUpdate.builder().clearLabel().build());
+        assertTrue(item.containsKey("label"));
+        List<Seen> both = List.copyOf(seen);
+        assertEquals(2, both.size());
+        assertEquals("PATCH", both.get(0).method());
+        assertEquals("/v1/collections/col_1/items/itm_1", both.get(0).path());
+        assertTrue(UUID_V4.matcher(both.get(0).key()).matches());
+        assertEquals(both.get(0).key(), both.get(1).key());
+        Map<String, Object> body = json(both.get(0).body());
+        assertEquals(1, body.size());
+        assertTrue(body.containsKey("label"));
+        assertNull(body.get("label"));
+        seen.clear();
+        collections().updateItem("col_1", "itm_1", ItemUpdate.builder().metadata(Map.of()).reference("emp-7").build());
+        assertEquals(Map.of("metadata", Map.of(), "reference", "emp-7"), json(seen.peek().body()));
+    }
+
+    @Test
+    void anUpdateWithNoFieldAndBadMetadataAreRefusedBeforeSending() {
+        ValidationError none = assertThrows(ValidationError.class, () -> collections().updateItem("col_1", "itm_1", ItemUpdate.builder().build()));
+        Map<?, ?> e = (Map<?, ?>) none.entries().get(0);
+        assertEquals("missing", e.get("type"));
+        assertEquals("Send reference, label, metadata or any of them", e.get("msg"));
+        assertEquals(List.of("body"), e.get("loc"));
+        assertTrue(e.containsKey("input"));
+        assertNull(e.get("input"));
+        Map<String, Object> many = new java.util.LinkedHashMap<>();
+        for (int i = 0; i < 21; i++) {
+            many.put("k" + i, i);
+        }
+        many.put("Bad Key", 1);
+        ValidationError tooMany = assertThrows(ValidationError.class,
+                () -> collections().updateItem("col_1", "itm_1", ItemUpdate.builder().metadata(many).build()));
+        assertEquals(1, tooMany.entries().size());
+        assertEquals("Metadata holds at most 20 keys.", ((Map<?, ?>) tooMany.entries().get(0)).get("msg"));
+        Map<String, Object> bad = new java.util.LinkedHashMap<>();
+        bad.put("a\u0001" + "b".repeat(45), 1);
+        bad.put("note", "n".repeat(501));
+        bad.put("tags", List.of("x"));
+        bad.put("ok", true);
+        ValidationError entries = assertThrows(ValidationError.class,
+                () -> collections().enroll("col_1", Image.fromUrl("badge", "https://files.example.com/b.jpg"), "emp-1", null, bad));
+        List<Object> got = entries.entries();
+        assertEquals(3, got.size());
+        Map<?, ?> key = (Map<?, ?>) got.get(0);
+        assertEquals("A metadata key is 1 to 40 characters of a-z, 0-9 and _: \"a?" + "b".repeat(38) + "...\".", key.get("msg"));
+        assertEquals(List.of("body", "metadata"), key.get("loc"));
+        Map<?, ?> text = (Map<?, ?>) got.get(1);
+        assertEquals(List.of("body", "metadata", "note"), text.get("loc"));
+        assertEquals("n".repeat(64) + "...", text.get("input"));
+        Map<?, ?> list = (Map<?, ?>) got.get(2);
+        assertEquals("A metadata value is a text, a number or true or false.", list.get("msg"));
+        assertNull(list.get("input"));
+        assertTrue(seen.isEmpty());
+    }
+
+    @Test
+    void itemFiltersGoInTheQueryAndAreCheckedFirst() {
+        reply = n -> new Reply(200, "{\"items\":[],\"total_capped\":false}");
+        collections().listItems("col_1", null, 10, null, "emp:");
+        assertEquals("/v1/collections/col_1/items?limit=10&reference_prefix=emp%3A", seen.peek().path());
+        BadRequestError both = assertThrows(BadRequestError.class, () -> collections().listItems("col_1", null, null, "a", "b"));
+        assertEquals("Send query parameter reference or reference_prefix, not both.", both.getMessage());
+        BadRequestError bad = assertThrows(BadRequestError.class, () -> collections().listItems("col_1", null, null, "a b\u00e9", null));
+        assertEquals("Query parameter reference must be 1 to 64 characters of A-Z, a-z, 0-9, _, ., : and -, got a b\\u{e9}.",
+                bad.getMessage());
+        BadRequestError longOne = assertThrows(BadRequestError.class, () -> collections().listItems("col_1", null, null, null, "!".repeat(65)));
+        assertTrue(longOne.getMessage().endsWith("got " + "!".repeat(64) + "...."), longOne.getMessage());
+        assertEquals(1, seen.size());
+    }
+
+    @Test
+    void anUnpricedEnrollmentIsNotRetriedAndAScopeDenialIsPermissionDenied() {
+        reply = n -> new Reply(529, "{\"detail\":{\"error_type\":\"overloaded_error\",\"message\":\"x\",\"details\":{\"reason\":\"enrollment_unpriced\"}}}");
+        OverloadedError e = assertThrows(OverloadedError.class,
+                () -> collections().enroll("col_1", Image.fromUrl("badge", "https://files.example.com/b.jpg"), "emp-1"));
+        assertEquals(Map.of("reason", "enrollment_unpriced"), e.details());
+        assertEquals(1, seen.size());
+        seen.clear();
+        reply = n -> n == 1 ? new Reply(529, "{\"detail\":{\"error_type\":\"overloaded_error\",\"message\":\"x\",\"details\":{\"reason\":\"face_model_unavailable\"}}}")
+                : new Reply(200, "{\"id\":\"itm_1\"}");
+        collections().enroll("col_1", Image.fromUrl("badge", "https://files.example.com/b.jpg"), "emp-1");
+        assertEquals(2, seen.size());
+        seen.clear();
+        reply = n -> new Reply(403, "{\"detail\":{\"error_type\":\"key_scope_denied\",\"message\":\"x\"}}");
+        assertThrows(PermissionDeniedError.class, () -> collections().get("col_1"));
+        assertEquals(1, seen.size());
+        assertEquals(Map.of(), new DecisionNodeError("local").details());
+    }
+
     private static String entryType(Runnable call) {
         ValidationError e = assertThrows(ValidationError.class, call::run);
         return (String) ((Map<?, ?>) e.entries().get(0)).get("type");

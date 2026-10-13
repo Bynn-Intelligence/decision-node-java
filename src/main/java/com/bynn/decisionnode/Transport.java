@@ -281,6 +281,10 @@ final class Transport {
     }
 
     private static boolean retryable(Policy policy, int status, DecisionNodeError err) {
+        if (status == 529 && "enrollment_unpriced".equals(err.details().get("reason"))) {
+            // No price for an enrollment: a retry never cures it.
+            return false;
+        }
         switch (policy) {
             case MUTATION:
                 return status == 429 || status == 529;
