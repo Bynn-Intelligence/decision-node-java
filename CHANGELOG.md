@@ -88,6 +88,11 @@ Implements version 1.3 of the DecisionNode SDK specification: boosters and fine-
 - `SPEC_VERSION` is `"1.3"`.
 - The 128-level nesting check counts the `boosters` list and its `options`.
 
+### Removed
+
+- `Batch.priceFactor()`: a batch carries no price of its own. The batch price is each model's
+  `batch_price_factor` in `models()`, and each line's charge is in its usage.
+
 ## [0.2.0] - Unreleased
 
 Implements version 1.2 of the DecisionNode SDK specification: sixteen images, videos as frames,

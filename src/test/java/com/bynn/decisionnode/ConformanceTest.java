@@ -1975,6 +1975,13 @@ class ConformanceTest {
         if (expected instanceof Map<?, ?> e && actual instanceof Map<?, ?> a) {
             for (Map.Entry<?, ?> entry : e.entrySet()) {
                 String k = (String) entry.getKey();
+                // {"$absent": true}: the key must not be there at all, not even as null (suite 1.17).
+                if (entry.getValue() instanceof Map<?, ?> marker && marker.size() == 1 && Boolean.TRUE.equals(marker.get("$absent"))) {
+                    if (a.containsKey(k)) {
+                        fail(path + "." + k + ": expected no such key, got " + a.get(k));
+                    }
+                    continue;
+                }
                 if (!a.containsKey(k)) {
                     fail(path + "." + k + ": missing (expected " + entry.getValue() + ")");
                 }

@@ -515,7 +515,7 @@ that one.
 
 ## Batches
 
-The Batch API answers decisions for less than live calls: DecisionNode Flash at 50% off the live price and DecisionNode MoE at 30% off ([pricing](https://decisionnode.com/docs/pricing#batch-jobs)). A batch has no set finishing time, so poll it; requests still unanswered 24 hours after it is finalized expire, unbilled.
+The Batch API answers decisions for less than live calls. The batch price is each model's: its `batch_price_factor` in `models()` (0.7 of the live price on DecisionNode MoE, 0.5 on DecisionNode Flash, none on a fine-tuned model), and each line's charge is in its own usage ([pricing](https://decisionnode.com/docs/pricing#batch-jobs)). A batch has no set finishing time, so poll it; requests still unanswered 24 hours after it is finalized expire, unbilled.
 
 ```java
 BatchRun run = dn.runBatch(List.of(

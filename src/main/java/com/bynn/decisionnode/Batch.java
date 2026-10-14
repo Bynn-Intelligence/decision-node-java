@@ -67,10 +67,6 @@ public final class Batch {
         return Responses.str(raw.get("results_expire_at"));
     }
 
-    public Double priceFactor() {
-        return Json.asDouble(raw.get("price_factor"));
-    }
-
     public Usage usage() {
         return Responses.usage(Json.asMap(raw.get("usage")));
     }
