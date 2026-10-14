@@ -1037,6 +1037,19 @@ final class LocalChecks {
         return points.length > most ? out + "..." : out.toString();
     }
 
+    /** A 422 entry on a field of the body, its input echoed as the API echoes it. */
+    static Map<String, Object> bodyEntry(String type, List<Object> loc, String msg, Object input) {
+        List<Object> full = new ArrayList<>();
+        full.add("body");
+        full.addAll(loc);
+        return entry(type, List.copyOf(full), msg, echoed(input), null);
+    }
+
+    /** The API's 422 holding these entries, raised before anything is sent. */
+    static ValidationError invalidEntries(List<Map<String, Object>> entries) {
+        return invalid(entries);
+    }
+
     /** How many characters of a string input a collections 422 entry echoes. */
     static final int ECHO_CHARS = 64;
 

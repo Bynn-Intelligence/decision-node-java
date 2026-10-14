@@ -171,4 +171,47 @@ class KeysTest {
         assertFalse(json(seen.peek().body()).containsKey("dry_run"));
         assertEquals("/v1/keys/revoke", seen.peek().target());
     }
+
+    private static Map<?, ?> firstEntry(Runnable call) {
+        ValidationError e = assertThrows(ValidationError.class, call::run);
+        assertEquals(1, e.entries().size(), "only the first fault");
+        assertNull(e.status());
+        return (Map<?, ?>) e.entries().get(0);
+    }
+
+    @Test
+    void theKeysFixedRulesAreCheckedFirst() {
+        Map<?, ?> blank = firstEntry(() -> keys().create(KeyCreate.builder("   ").deviceId(" bad").build()));
+        assertEquals("Give the key a name.", blank.get("msg"));
+        assertEquals(List.of("body", "name"), blank.get("loc"));
+        assertEquals("Key names are at most 48 characters.", firstEntry(() -> keys().create(KeyCreate.builder("n".repeat(49)).build())).get("msg"));
+        keys().create(KeyCreate.builder("  " + "n".repeat(48) + "  ").build());
+        seen.clear();
+        Map<?, ?> device = firstEntry(() -> keys().create(KeyCreate.builder("Drone 9").deviceId(" drone-9").label("Site", "x").build()));
+        assertEquals(List.of("body", "device_id"), device.get("loc"));
+        assertEquals("A label's name is 1 to 32 of a-z, 0-9, _ . and -.",
+                firstEntry(() -> keys().create(KeyCreate.builder("Drone 9").label("Site", "oslo").build())).get("msg"));
+        Map<?, ?> value = firstEntry(() -> keys().create(KeyCreate.builder("Drone 9").label("site", "").build()));
+        assertEquals(List.of("body", "labels", "site"), value.get("loc"));
+        assertNull(value.get("input"), "an object is echoed as null");
+        Map<String, String> many = new java.util.TreeMap<>();
+        for (int i = 0; i < 17; i++) {
+            many.put(String.format("l%02d", i), "v");
+        }
+        assertEquals("A key has at most 16 labels.", firstEntry(() -> keys().create(KeyCreate.builder("Drone 9").labels(many).build())).get("msg"));
+        for (double bad : new double[] {0.005, 1000.01, 0}) {
+            assertEquals("daily_spend_cap.usd is from 0.01 to 1000, in cents, or null.",
+                    firstEntry(() -> keys().create(KeyCreate.builder("Drone 9").dailySpendCap(bad).build())).get("msg"));
+        }
+        assertEquals("A bulk revoke names at least one label: every key it revokes has them all.",
+                firstEntry(() -> keys().revokeByLabels(Map.of(), null, null)).get("msg"));
+        List<String> devices = new ArrayList<>();
+        for (int i = 0; i < 1001; i++) {
+            devices.add("d-" + i);
+        }
+        assertEquals("device_ids is a list of at most 1,000 device ids.",
+                firstEntry(() -> keys().revokeByLabels(Map.of("customer", "acme"), devices, null)).get("msg"));
+        assertEquals("Give the key a name.", firstEntry(() -> keys().update(KEY, KeyUpdate.builder().name(" ").build())).get("msg"));
+        assertTrue(seen.isEmpty());
+    }
 }

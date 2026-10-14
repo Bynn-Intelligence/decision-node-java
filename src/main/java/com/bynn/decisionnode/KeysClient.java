@@ -38,6 +38,11 @@ public final class KeysClient {
         byte[] body;
         String key;
         try {
+            List<Map<String, Object>> entries = new ArrayList<>(KeyChecks.name(request.fields.get("name")));
+            if (entries.isEmpty()) {
+                entries.addAll(KeyChecks.fields(request.fields, false));
+            }
+            KeyChecks.raiseFirst(entries);
             key = request.idempotencyKey;
             if (key != null && (key.isEmpty() || key.length() > 255 || key.chars().anyMatch(c -> c < 0x20 || c > 0x7E))) {
                 throw LocalChecks.usage("Idempotency-Key must be sent once, as 1 to 255 printable ASCII characters.", null);
@@ -102,11 +107,17 @@ public final class KeysClient {
         String path;
         byte[] body;
         try {
-            path = path(keyId);
-            if (update == null || update.fields.isEmpty()) {
+            Map<String, Object> f = update == null ? Map.of() : update.fields;
+            List<Map<String, Object>> entries = new ArrayList<>(f.containsKey("name") ? KeyChecks.name(f.get("name")) : List.of());
+            if (entries.isEmpty()) {
+                entries.addAll(KeyChecks.fields(f, true));
+            }
+            KeyChecks.raiseFirst(entries);
+            if (f.isEmpty()) {
                 throw LocalChecks.usage("Nothing to change.", null);
             }
-            body = Json.write(update.fields);
+            path = path(keyId);
+            body = Json.write(f);
         } catch (RuntimeException e) {
             return CompletableFuture.failedFuture(e);
         }
@@ -130,8 +141,9 @@ public final class KeysClient {
 
     /**
      * {@code POST /v1/keys/revoke}: revokes the active device keys carrying every one of these
-     * labels (and, when given, made for one of these devices), at most 10,000 a call; with
-     * {@code dryRun} true it only counts them. Null leaves {@code deviceIds} or {@code dryRun} out.
+     * labels (at least one; and, when given, made for one of at most 1,000 devices), at most 10,000
+     * a call; with {@code dryRun} true it only counts them. Null leaves {@code deviceIds} or
+     * {@code dryRun} out.
      */
     public Map<String, Object> revokeByLabels(Map<String, String> labels, List<String> deviceIds, Boolean dryRun) {
         return Transport.await(revokeByLabelsAsync(labels, deviceIds, dryRun));
@@ -140,6 +152,7 @@ public final class KeysClient {
     public CompletableFuture<Map<String, Object>> revokeByLabelsAsync(Map<String, String> labels, List<String> deviceIds, Boolean dryRun) {
         byte[] body;
         try {
+            KeyChecks.raiseFirst(KeyChecks.revoke(labels == null ? Map.of() : labels, deviceIds));
             Map<String, Object> b = new LinkedHashMap<>();
             b.put("labels", labels);
             if (deviceIds != null) {

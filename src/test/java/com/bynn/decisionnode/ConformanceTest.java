@@ -212,8 +212,8 @@ class ConformanceTest {
             if (!same(exp.get("upload_ids"), result)) {
                 fail("upload_ids: expected " + exp.get("upload_ids") + ", got " + result);
             }
-        } else if (exp.containsKey("collections") || exp.containsKey("usage_items")) {
-            String kind = exp.containsKey("collections") ? "collections" : "usage_items";
+        } else if (exp.containsKey("collections") || exp.containsKey("usage_items") || exp.containsKey("api_keys")) {
+            String kind = List.of("collections", "usage_items", "api_keys").stream().filter(exp::containsKey).findFirst().orElseThrow();
             List<?> expected = list(exp.get(kind));
             List<?> got = (List<?>) result;
             if (expected.size() != got.size()) {
@@ -223,8 +223,11 @@ class ConformanceTest {
                 match(expected.get(i), got.get(i), kind + "[" + i + "]");
             }
         } else if (exp.containsKey("collection") || exp.containsKey("item") || exp.containsKey("item_page")
-                || exp.containsKey("deleted") || exp.containsKey("key_usage") || exp.containsKey("usage_page")) {
-            String kind = List.of("collection", "item", "item_page", "deleted", "key_usage", "usage_page").stream()
+                || exp.containsKey("deleted") || exp.containsKey("key_usage") || exp.containsKey("usage_page")
+                || exp.containsKey("created_key") || exp.containsKey("api_key") || exp.containsKey("key_page")
+                || exp.containsKey("key_revoked") || exp.containsKey("keys_revoked")) {
+            String kind = List.of("collection", "item", "item_page", "deleted", "key_usage", "usage_page", "created_key", "api_key",
+                            "key_page", "key_revoked", "keys_revoked").stream()
                     .filter(exp::containsKey).findFirst().orElseThrow();
             match(exp.get(kind), result, kind);
         } else {
@@ -869,9 +872,9 @@ class ConformanceTest {
                 }
                 case "answer" -> match(mapOrEmpty(spec.get("answer")), normAnswer((Answer) result), path + ".answer");
                 case "batch" -> match(mapOrEmpty(spec.get("batch")), ((Batch) result).raw(), path + ".batch");
-                case "collection", "item", "item_page", "deleted", "key_usage", "usage_page" ->
-                        match(mapOrEmpty(spec.get(kind)), result, path + "." + kind);
-                case "collections", "usage_items" -> {
+                case "collection", "item", "item_page", "deleted", "key_usage", "usage_page", "created_key", "api_key", "key_page",
+                        "key_revoked", "keys_revoked" -> match(mapOrEmpty(spec.get(kind)), result, path + "." + kind);
+                case "collections", "usage_items", "api_keys" -> {
                     List<?> expected = list(spec.get(kind));
                     List<?> got = (List<?>) result;
                     if (expected.size() != got.size()) {
@@ -1540,6 +1543,85 @@ class ConformanceTest {
             case "batches.cancel":
                 return async ? join(client.batches().cancelAsync((String) args.get("batch_id")))
                         : client.batches().cancel((String) args.get("batch_id"));
+            case "keys.create": {
+                KeyCreate.Builder b = KeyCreate.builder((String) args.get("name"));
+                if (args.containsKey("device_id")) {
+                    b.deviceId((String) args.get("device_id"));
+                }
+                if (args.containsKey("labels")) {
+                    b.labels(stringMap(args.get("labels")));
+                }
+                if (args.containsKey("limits")) {
+                    b.limits(map(args.get("limits")));
+                }
+                if (args.containsKey("daily_spend_cap")) {
+                    b.dailySpendCap(((Number) map(args.get("daily_spend_cap")).get("usd")).doubleValue());
+                }
+                if (args.containsKey("expires_at")) {
+                    b.expiresAt((String) args.get("expires_at"));
+                }
+                if (args.containsKey("may_search_collections")) {
+                    b.maySearchCollections((Boolean) args.get("may_search_collections"));
+                }
+                if (args.containsKey("idempotency_key")) {
+                    b.idempotencyKey((String) args.get("idempotency_key"));
+                }
+                return async ? join(client.keys().createAsync(b.build())) : client.keys().create(b.build());
+            }
+            case "keys.list":
+                return async ? join(client.keys().listAsync(keyListQuery(args))) : client.keys().list(keyListQuery(args));
+            case "keys.all":
+                return async ? join(client.keys().allAsync(keyListQuery(args))) : client.keys().all(keyListQuery(args));
+            case "keys.update": {
+                // A field the case leaves out is not set; one given as null clears it.
+                KeyUpdate.Builder u = KeyUpdate.builder();
+                if (args.containsKey("name")) {
+                    u.name((String) args.get("name"));
+                }
+                if (args.containsKey("labels")) {
+                    if (args.get("labels") == null) {
+                        u.clearLabels();
+                    } else {
+                        u.labels(stringMap(args.get("labels")));
+                    }
+                }
+                if (args.containsKey("limits")) {
+                    if (args.get("limits") == null) {
+                        u.clearLimits();
+                    } else {
+                        u.limits(map(args.get("limits")));
+                    }
+                }
+                if (args.containsKey("daily_spend_cap")) {
+                    if (args.get("daily_spend_cap") == null) {
+                        u.clearDailySpendCap();
+                    } else {
+                        u.dailySpendCap(((Number) map(args.get("daily_spend_cap")).get("usd")).doubleValue());
+                    }
+                }
+                if (args.containsKey("expires_at")) {
+                    if (args.get("expires_at") == null) {
+                        u.clearExpiresAt();
+                    } else {
+                        u.expiresAt((String) args.get("expires_at"));
+                    }
+                }
+                if (args.containsKey("may_search_collections")) {
+                    u.maySearchCollections((Boolean) args.get("may_search_collections"));
+                }
+                String id = (String) args.get("key_id");
+                return async ? join(client.keys().updateAsync(id, u.build())) : client.keys().update(id, u.build());
+            }
+            case "keys.revoke":
+                return async ? join(client.keys().revokeAsync((String) args.get("key_id"))) : client.keys().revoke((String) args.get("key_id"));
+            case "keys.revoke_by_labels": {
+                Map<String, String> labels = stringMap(args.get("labels"));
+                @SuppressWarnings("unchecked")
+                List<String> devices = (List<String>) args.get("device_ids");
+                Boolean dryRun = (Boolean) args.get("dry_run");
+                return async ? join(client.keys().revokeByLabelsAsync(labels, devices, dryRun))
+                        : client.keys().revokeByLabels(labels, devices, dryRun);
+            }
             case "usage.key": {
                 String id = (String) args.get("key_id");
                 String start = (String) args.get("start");
@@ -1613,6 +1695,25 @@ class ConformanceTest {
             default:
                 throw new AssertionError("unknown method " + method);
         }
+    }
+
+    @SuppressWarnings("unchecked")
+    private static Map<String, String> stringMap(Object value) {
+        Map<String, String> out = new LinkedHashMap<>();
+        ((Map<String, Object>) value).forEach((k, v) -> out.put(k, (String) v));
+        return out;
+    }
+
+    private static KeyListQuery keyListQuery(Map<String, Object> args) {
+        KeyListQuery.Builder b = KeyListQuery.builder()
+                .deviceId((String) args.get("device_id"))
+                .status((String) args.get("status"))
+                .limit(args.get("limit") == null ? null : ((Number) args.get("limit")).intValue())
+                .cursor((String) args.get("cursor"));
+        if (args.get("labels") != null) {
+            b.labels(stringMap(args.get("labels")));
+        }
+        return b.build();
     }
 
     @SuppressWarnings("unchecked")
