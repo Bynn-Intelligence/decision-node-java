@@ -1122,7 +1122,7 @@ public final class DecisionNode {
 
     // ------------------------------------------------------------------ batches
 
-    /** The Batch API: decisions answered within 24 hours at half the price. */
+    /** The Batch API: decisions for less than live calls; see {@link Batches}. */
     public Batches batches() {
         return batches;
     }

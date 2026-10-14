@@ -12,7 +12,9 @@ import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 
 /**
- * The Batch API: decisions answered within 24 hours at half the price.
+ * The Batch API: decisions for less than live calls (DecisionNode Flash 50% off, DecisionNode MoE
+ * 30% off). A batch has no set finishing time; requests unanswered 24 hours after finalize expire
+ * unbilled.
  *
  * <pre>{@code
  * BatchRun run = dn.runBatch(List.of(

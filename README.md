@@ -515,7 +515,7 @@ that one.
 
 ## Batches
 
-The Batch API answers decisions within 24 hours at half the price.
+The Batch API answers decisions for less than live calls: DecisionNode Flash at 50% off the live price and DecisionNode MoE at 30% off ([pricing](https://decisionnode.com/docs/pricing#batch-jobs)). A batch has no set finishing time, so poll it; requests still unanswered 24 hours after it is finalized expire, unbilled.
 
 ```java
 BatchRun run = dn.runBatch(List.of(
