@@ -19,6 +19,17 @@ import java.util.Map;
  * @param status         a fine-tuned model's status: {@code deployed} (it answers decisions),
  *                       {@code ready} (trained, not deployed), or any other value as sent; null
  *                       for a catalogue entry
+ * @param pricePerMillionInput  the live price per million input tokens, in USD
+ *                       ({@code price_per_million_input}), as sent; null when the entry has none
+ * @param pricePerMillionOutput the price per million output tokens, in USD
+ *                       ({@code price_per_million_output}), as sent; null when the entry has none
+ * @param pricePerMillionImage  the price per million image tokens, in USD
+ *                       ({@code price_per_million_image}), as sent; null when the entry has none
+ * @param pricePerMillionVideo  the price per million video tokens, in USD
+ *                       ({@code price_per_million_video}), as sent; null when the entry has none
+ * @param batchPriceFactor the share of the live price a batch line of this model is billed
+ *                       ({@code batch_price_factor}, for example 0.5); null on a model that takes no
+ *                       batches, such as a fine-tuned model
  * @param limits         every other field of the entry: the published limits, such as the largest input
  * @param raw            the entry exactly as sent
  */
@@ -30,10 +41,21 @@ public record ModelInfo(
         String base,
         Long adapterVersion,
         String status,
+        Double pricePerMillionInput,
+        Double pricePerMillionOutput,
+        Double pricePerMillionImage,
+        Double pricePerMillionVideo,
+        Double batchPriceFactor,
         Map<String, Object> limits,
         Map<String, Object> raw) {
 
-    /** A catalogue entry: no fine-tuned fields. */
+    /** An entry without prices. */
+    public ModelInfo(String name, String description, String releaseDate, Boolean fineTuned, String base, Long adapterVersion,
+            String status, Map<String, Object> limits, Map<String, Object> raw) {
+        this(name, description, releaseDate, fineTuned, base, adapterVersion, status, null, null, null, null, null, limits, raw);
+    }
+
+    /** A catalogue entry: no fine-tuned fields and no prices. */
     public ModelInfo(String name, String description, String releaseDate, Map<String, Object> limits, Map<String, Object> raw) {
         this(name, description, releaseDate, null, null, null, null, limits, raw);
     }

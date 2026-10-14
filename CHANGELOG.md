@@ -10,6 +10,9 @@ Implements version 1.3 of the DecisionNode SDK specification: boosters and fine-
 
 ### Added
 
+- `ModelInfo.pricePerMillionInput()`, `pricePerMillionOutput()`, `pricePerMillionImage()`,
+  `pricePerMillionVideo()` and `batchPriceFactor()`: the model's prices as sent, null when the
+  entry has none; they stay in `limits` too.
 - `FaceRecognitionReading.collectionName()` and, on each `FaceMatch`, `collectionName()` and
   `metadata()` (the item's metadata as sent), each null when absent. A reading whose
   `collection_name` is not a string, or a match whose `metadata` is not an object, is an

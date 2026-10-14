@@ -162,8 +162,12 @@ carry their own. It is null when the answer does not carry a cost.
 | `upload(images)` | Uploads images now and returns their upload ids; see Images |
 | `openSession(request)`, `supervise(request, feed, onReply)` | Sessions; see below |
 | `batches()`, `runBatch(requests)` | The Batch API; see below |
-| `models()` | The models and their published limits, as `ModelInfo` entries |
+| `models()` | The models, their published limits and their prices, as `ModelInfo` entries |
 | `decideRaw(body)` | Sends the body exactly as given, unchecked, and returns the parsed response, for API fields this SDK does not know yet |
+
+Each `ModelInfo` carries the model's prices in USD as sent, `pricePerMillionInput()`,
+`pricePerMillionOutput()`, `pricePerMillionImage()` and `pricePerMillionVideo()`, and the share of
+the live price a batch line is billed, `batchPriceFactor()`; each is null when the entry has none.
 
 Every method has an `...Async` form returning a `CompletableFuture`:
 
@@ -515,7 +519,7 @@ that one.
 
 ## Batches
 
-The Batch API answers decisions for less than live calls. The batch price is each model's: its `batch_price_factor` in `models()` (0.7 of the live price on DecisionNode MoE, 0.5 on DecisionNode Flash, none on a fine-tuned model), and each line's charge is in its own usage ([pricing](https://decisionnode.com/docs/pricing#batch-jobs)). A batch has no set finishing time, so poll it; requests still unanswered 24 hours after it is finalized expire, unbilled.
+The Batch API answers decisions for less than live calls. The batch price is each model's: `models()` states it as the model's `batchPriceFactor()` (DecisionNode MoE 0.7 and DecisionNode Flash 0.5 of the live price; none on a fine-tuned model, which takes no batches), and each line is billed at its own model's, its charge in the line's usage ([pricing](https://decisionnode.com/docs/pricing#batch-jobs)). A batch has no set finishing time, so poll it; requests still unanswered 24 hours after it is finalized expire, unbilled.
 
 ```java
 BatchRun run = dn.runBatch(List.of(

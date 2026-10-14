@@ -540,6 +540,11 @@ final class Responses {
                     str(m.get("base")),
                     whole(m.get("adapter_version")),
                     str(m.get("status")),
+                    Json.asDouble(m.get("price_per_million_input")),
+                    Json.asDouble(m.get("price_per_million_output")),
+                    Json.asDouble(m.get("price_per_million_image")),
+                    Json.asDouble(m.get("price_per_million_video")),
+                    Json.asDouble(m.get("batch_price_factor")),
                     Collections.unmodifiableMap(limits),
                     Collections.unmodifiableMap(m)));
         }

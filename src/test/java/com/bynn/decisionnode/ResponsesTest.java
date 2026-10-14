@@ -133,6 +133,31 @@ class ResponsesTest {
     }
 
     @Test
+    void modelsCarryTheirPricesAsSentAndInLimits() throws Exception {
+        List<ModelInfo> models = Responses.models(Json.asMap(Json.read((
+                "{\"models\":[{\"name\":\"decisionnode-moe\",\"description\":\"d\",\"release_date\":\"2026-10-01\","
+                + "\"price_per_million_input\":0.042,\"price_per_million_output\":0,\"price_per_million_image\":0.084,"
+                + "\"price_per_million_video\":0.0420000000000001,\"batch_price_factor\":0.7},"
+                + "{\"name\":\"decisionnode-flash@acme/fraud:3\",\"description\":\"f\",\"release_date\":\"2026-10-09\","
+                + "\"price_per_million_input\":\"0.06\",\"batch_price_factor\":null}]}").getBytes(StandardCharsets.UTF_8))));
+        ModelInfo moe = models.get(0);
+        assertEquals(0.042, moe.pricePerMillionInput());
+        assertEquals(0.0, moe.pricePerMillionOutput());
+        assertEquals(0.084, moe.pricePerMillionImage());
+        assertEquals(0.0420000000000001, moe.pricePerMillionVideo());
+        assertEquals(0.7, moe.batchPriceFactor());
+        assertEquals(0.042, ((Number) moe.limits().get("price_per_million_input")).doubleValue());
+        assertTrue(moe.limits().containsKey("batch_price_factor"));
+        ModelInfo tuned = models.get(1);
+        assertNull(tuned.pricePerMillionInput(), "a price that is not a number is null");
+        assertNull(tuned.pricePerMillionOutput());
+        assertNull(tuned.batchPriceFactor());
+        assertEquals("0.06", tuned.limits().get("price_per_million_input"));
+        ModelInfo old = new ModelInfo("decisionnode-moe", "d", "2026-10-01", Map.of(), Map.of());
+        assertNull(old.pricePerMillionInput());
+    }
+
+    @Test
     void malformedKnownAnswersAreUnknown() throws Exception {
         Decision d = decision("{\"model\":\"decisionnode-moe-0.9.0-rc1\",\"answers\":{"
                 + "\"t1\":{\"type\":\"truth\"},"
