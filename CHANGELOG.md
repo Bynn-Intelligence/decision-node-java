@@ -10,6 +10,11 @@ Implements version 1.3 of the DecisionNode SDK specification: boosters and fine-
 
 ### Added
 
+- Per-key usage, on `DecisionNode.usage()`: `key` (`GET /v1/keys/{key_id}/usage`), `list`
+  (`GET /v1/usage`, one page, with a `UsageQuery`) and `all` (every page's rows), sync and async,
+  each returning the API's object as sent; the query's filters are checked before sending.
+- A 429 `key_spend_cap_reached` is raised at once as a `RateLimitError`, never retried: the key's
+  daily spend cap resets at 00:00 UTC.
 - `ModelInfo.pricePerMillionInput()`, `pricePerMillionOutput()`, `pricePerMillionImage()`,
   `pricePerMillionVideo()` and `batchPriceFactor()`: the model's prices as sent, null when the
   entry has none; they stay in `limits` too.

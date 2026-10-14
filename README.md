@@ -556,6 +556,31 @@ its status gives, never thrown. `create`, `add` and `finalize` are retried only 
 since a repeat after a lost answer could create a second draft; a finalize answered `409` is
 checked with `get`, and the batch is returned when an earlier finalize went through.
 
+## Usage per key
+
+What each API key used and spent over a period, read with a Full access or Manage device keys key
+on your server. `start` and `end` are RFC 3339 times, rounded to the hour in UTC; a period is at
+most 400 days.
+
+```java
+// One key: totals, and buckets by hour, day or month when asked.
+Map<String, Object> one = dn.usage().key("key_3b8f0d6e2a914c7b9e5f1a2c4d6e8f01",
+    "2026-10-01T00:00:00Z", "2026-10-03T00:00:00Z", "day", null);
+
+// Every key that matches the filters, one row per key, across all pages.
+List<Map<String, Object>> rows = dn.usage().all(
+    UsageQuery.builder("2026-10-01T00:00:00Z", "2026-11-01T00:00:00Z")
+        .label("customer", "acme")
+        .build());
+```
+
+`key` returns the key, the period, `as_of`, the `totals` (requests, tokens, booster calls and the
+`cost`) and the `buckets` or the `by_model` or `by_channel` split you asked for. `list` returns one
+page, `{period, as_of, items, next_cursor}`; `all` follows `next_cursor` until it is null and
+returns every page's rows. The filters (`granularity`, `groupBy`, labels, `deviceId`, up to 100
+`keyIds`, `scope`, `status`, `includeEmpty`, `limit`) are checked as the API checks them before
+anything is sent.
+
 ## Safety
 
 Every decision from the hosted API carries the result of its safety check:

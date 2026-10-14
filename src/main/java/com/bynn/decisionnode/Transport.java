@@ -285,6 +285,10 @@ final class Transport {
             // No price for an enrollment: a retry never cures it.
             return false;
         }
+        if (status == 429 && "key_spend_cap_reached".equals(err.errorType())) {
+            // The key's daily spend cap: its wait runs to 00:00 UTC, so it is raised at once.
+            return false;
+        }
         switch (policy) {
             case MUTATION:
                 return status == 429 || status == 529;

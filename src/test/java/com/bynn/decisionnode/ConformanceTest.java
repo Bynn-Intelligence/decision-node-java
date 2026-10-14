@@ -212,19 +212,20 @@ class ConformanceTest {
             if (!same(exp.get("upload_ids"), result)) {
                 fail("upload_ids: expected " + exp.get("upload_ids") + ", got " + result);
             }
-        } else if (exp.containsKey("collections")) {
-            List<?> expected = list(exp.get("collections"));
+        } else if (exp.containsKey("collections") || exp.containsKey("usage_items")) {
+            String kind = exp.containsKey("collections") ? "collections" : "usage_items";
+            List<?> expected = list(exp.get(kind));
             List<?> got = (List<?>) result;
             if (expected.size() != got.size()) {
-                fail("collections: expected " + expected.size() + " collections, got " + got.size());
+                fail(kind + ": expected " + expected.size() + " entries, got " + got.size());
             }
             for (int i = 0; i < expected.size(); i++) {
-                match(expected.get(i), got.get(i), "collections[" + i + "]");
+                match(expected.get(i), got.get(i), kind + "[" + i + "]");
             }
         } else if (exp.containsKey("collection") || exp.containsKey("item") || exp.containsKey("item_page")
-                || exp.containsKey("deleted")) {
-            String kind = exp.containsKey("collection") ? "collection" : exp.containsKey("item") ? "item"
-                    : exp.containsKey("item_page") ? "item_page" : "deleted";
+                || exp.containsKey("deleted") || exp.containsKey("key_usage") || exp.containsKey("usage_page")) {
+            String kind = List.of("collection", "item", "item_page", "deleted", "key_usage", "usage_page").stream()
+                    .filter(exp::containsKey).findFirst().orElseThrow();
             match(exp.get(kind), result, kind);
         } else {
             fail("no expectation this harness knows: " + exp.keySet());
@@ -577,6 +578,24 @@ class ConformanceTest {
                 fail(where + " query: expected " + exp.get("query") + ", got " + q);
             }
         }
+        if (exp.containsKey("query_all")) {
+            // Every value of each parameter, a repeated one in its order (suite 1.18).
+            Map<String, Object> q = new LinkedHashMap<>();
+            String raw = (String) got.get("query");
+            if (raw != null && !raw.isEmpty()) {
+                for (String part : raw.split("&")) {
+                    int eq = part.indexOf('=');
+                    String k = URLDecoder.decode(eq < 0 ? part : part.substring(0, eq), StandardCharsets.UTF_8);
+                    String v = eq < 0 ? "" : URLDecoder.decode(part.substring(eq + 1), StandardCharsets.UTF_8);
+                    @SuppressWarnings("unchecked")
+                    List<Object> values = (List<Object>) q.computeIfAbsent(k, x -> new ArrayList<>());
+                    values.add(v);
+                }
+            }
+            if (!same(exp.get("query_all"), q)) {
+                fail(where + " query: expected " + exp.get("query_all") + ", got " + q);
+            }
+        }
         if (exp.containsKey("status") && !same(exp.get("status"), got.get("status"))) {
             fail(where + " status: the mock answered " + got.get("status") + ", expected " + exp.get("status"));
         }
@@ -732,7 +751,7 @@ class ConformanceTest {
             fail("request sequence: expected " + expected.size() + " requests, the mock received " + log.size() + ": " + summary(log));
         }
         Set<String> checks = Set.of("headers", "header_patterns", "absent_headers", "body_checks", "jsonl_count", "jsonl_checks",
-                "body_base64", "body_sha256", "query");
+                "body_base64", "body_sha256", "query", "query_all");
         for (int i = 0; i < expected.size(); i++) {
             Map<String, Object> spec = map(expected.get(i));
             Map<String, Object> rec = map(log.get(i));
@@ -850,15 +869,16 @@ class ConformanceTest {
                 }
                 case "answer" -> match(mapOrEmpty(spec.get("answer")), normAnswer((Answer) result), path + ".answer");
                 case "batch" -> match(mapOrEmpty(spec.get("batch")), ((Batch) result).raw(), path + ".batch");
-                case "collection", "item", "item_page", "deleted" -> match(mapOrEmpty(spec.get(kind)), result, path + "." + kind);
-                case "collections" -> {
-                    List<?> expected = list(spec.get("collections"));
+                case "collection", "item", "item_page", "deleted", "key_usage", "usage_page" ->
+                        match(mapOrEmpty(spec.get(kind)), result, path + "." + kind);
+                case "collections", "usage_items" -> {
+                    List<?> expected = list(spec.get(kind));
                     List<?> got = (List<?>) result;
                     if (expected.size() != got.size()) {
-                        fail(path + ".collections: expected " + expected.size() + " collections, got " + got.size());
+                        fail(path + "." + kind + ": expected " + expected.size() + " entries, got " + got.size());
                     }
                     for (int i = 0; i < expected.size(); i++) {
-                        match(expected.get(i), got.get(i), path + ".collections[" + i + "]");
+                        match(expected.get(i), got.get(i), path + "." + kind + "[" + i + "]");
                     }
                 }
                 case "batch_page" -> match(mapOrEmpty(spec.get("batch_page")), ((BatchPage) result).raw(), path + ".batch_page");
@@ -1520,6 +1540,19 @@ class ConformanceTest {
             case "batches.cancel":
                 return async ? join(client.batches().cancelAsync((String) args.get("batch_id")))
                         : client.batches().cancel((String) args.get("batch_id"));
+            case "usage.key": {
+                String id = (String) args.get("key_id");
+                String start = (String) args.get("start");
+                String end = (String) args.get("end");
+                String granularity = (String) args.get("granularity");
+                String groupBy = (String) args.get("group_by");
+                return async ? join(client.usage().keyAsync(id, start, end, granularity, groupBy))
+                        : client.usage().key(id, start, end, granularity, groupBy);
+            }
+            case "usage.list":
+                return async ? join(client.usage().listAsync(usageQuery(args))) : client.usage().list(usageQuery(args));
+            case "usage.all":
+                return async ? join(client.usage().allAsync(usageQuery(args))) : client.usage().all(usageQuery(args));
             case "collections.create": {
                 String name = (String) args.get("name");
                 if (args.containsKey("type")) {
@@ -1580,6 +1613,26 @@ class ConformanceTest {
             default:
                 throw new AssertionError("unknown method " + method);
         }
+    }
+
+    @SuppressWarnings("unchecked")
+    private static UsageQuery usageQuery(Map<String, Object> args) {
+        UsageQuery.Builder b = UsageQuery.builder((String) args.get("start"), (String) args.get("end"))
+                .granularity((String) args.get("granularity"))
+                .groupBy((String) args.get("group_by"))
+                .deviceId((String) args.get("device_id"))
+                .scope((String) args.get("scope"))
+                .status((String) args.get("status"))
+                .includeEmpty((Boolean) args.get("include_empty"))
+                .limit(args.get("limit") == null ? null : ((Number) args.get("limit")).intValue())
+                .cursor((String) args.get("cursor"));
+        if (args.get("labels") != null) {
+            b.labels((Map<String, String>) args.get("labels"));
+        }
+        if (args.get("key_ids") != null) {
+            b.keyIds((List<String>) args.get("key_ids"));
+        }
+        return b.build();
     }
 
     private static Duration seconds(Object n) {

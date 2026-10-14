@@ -91,6 +91,7 @@ public final class DecisionNode {
     private final Uploads uploads;
     private final Batches batches;
     private final CollectionsClient collections;
+    private final UsageClient usage;
     private volatile Map<String, Map<String, Object>> held = Map.of();
 
     /** A client configured from the environment. */
@@ -149,6 +150,7 @@ public final class DecisionNode {
                 b.clock != null ? b.clock : System::currentTimeMillis);
         this.batches = new Batches(this);
         this.collections = new CollectionsClient(this);
+        this.usage = new UsageClient(this);
     }
 
     public static Builder builder() {
@@ -1130,6 +1132,11 @@ public final class DecisionNode {
     /** The workspace's collections of faces: create, enroll, list and delete. */
     public CollectionsClient collections() {
         return collections;
+    }
+
+    /** Per-key usage: what each API key used and spent over a period. */
+    public UsageClient usage() {
+        return usage;
     }
 
     /**
