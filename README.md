@@ -581,6 +581,31 @@ returns every page's rows. The filters (`granularity`, `groupBy`, labels, `devic
 `keyIds`, `scope`, `status`, `includeEmpty`, `limit`) are checked as the API checks them before
 anything is sent.
 
+## Keys for devices
+
+With a Manage device keys key on your provisioning server, make a Decisions-only key for each
+device, list them, change one and revoke one or every key a label picks.
+
+```java
+Map<String, Object> made = dn.keys().create(KeyCreate.builder("Kiosk 0412")
+    .deviceId("kiosk-0412")
+    .label("store", "118")
+    .dailySpendCap(2.0)
+    .build());
+// made.get("secret") is shown once: hand it to the device and never log it.
+
+List<Map<String, Object>> store = dn.keys().all(KeyListQuery.builder().label("store", "118").build());
+dn.keys().update("key_7c2e9a41b0d34f6e8a5c1d2b3e4f5a60", KeyUpdate.builder().clearExpiresAt().build());
+dn.keys().revokeByLabels(Map.of("store", "118"), null, true); // a dry run: counts, revokes nothing
+```
+
+`create` sends an `Idempotency-Key`, yours or a new one for the call, the same on every attempt, so
+a retried call never makes a second key. `list` returns one page, `{items, next_cursor}`, of the
+active keys unless `status` says otherwise; `all` follows `next_cursor` until it is null. `update`
+changes only the fields set (a `clear...` method removes one); a key's device never changes.
+`revoke` revokes one key at once, and `revokeByLabels` every active key carrying all the labels
+given, at most 10,000 a call.
+
 ## Safety
 
 Every decision from the hosted API carries the result of its safety check:

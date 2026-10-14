@@ -138,7 +138,12 @@ final class Transport {
      * sent on every attempt of it, so retrying it never applies it twice.
      */
     CompletableFuture<Response> idempotent(String method, String path, byte[] body) {
-        return call(method, path, body, "application/json", Policy.IDEMPOTENT, timeout, java.util.UUID.randomUUID().toString());
+        return idempotent(method, path, body, java.util.UUID.randomUUID().toString());
+    }
+
+    /** {@link #idempotent(String, String, byte[])} under the caller's own key. */
+    CompletableFuture<Response> idempotent(String method, String path, byte[] body, String key) {
+        return call(method, path, body, "application/json", Policy.IDEMPOTENT, timeout, key);
     }
 
     private CompletableFuture<Response> call(String method, String path, byte[] body, String contentType, Policy policy,

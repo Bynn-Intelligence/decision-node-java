@@ -10,6 +10,11 @@ Implements version 1.3 of the DecisionNode SDK specification: boosters and fine-
 
 ### Added
 
+- Device keys, on `DecisionNode.keys()`, for a Manage device keys key: `create` (`POST /v1/keys`,
+  a `KeyCreate`, under an `Idempotency-Key` kept across attempts), `list` and `all`
+  (`GET /v1/keys`, a `KeyListQuery`), `update` (`PATCH /v1/keys/{key_id}`, a `KeyUpdate` whose
+  `clear...` methods send null), `revoke` (`DELETE /v1/keys/{key_id}`) and `revokeByLabels`
+  (`POST /v1/keys/revoke`), sync and async, each returning the API's object as sent.
 - Per-key usage, on `DecisionNode.usage()`: `key` (`GET /v1/keys/{key_id}/usage`), `list`
   (`GET /v1/usage`, one page, with a `UsageQuery`) and `all` (every page's rows), sync and async,
   each returning the API's object as sent; the query's filters are checked before sending.

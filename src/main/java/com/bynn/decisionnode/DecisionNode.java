@@ -92,6 +92,7 @@ public final class DecisionNode {
     private final Batches batches;
     private final CollectionsClient collections;
     private final UsageClient usage;
+    private final KeysClient keys;
     private volatile Map<String, Map<String, Object>> held = Map.of();
 
     /** A client configured from the environment. */
@@ -151,6 +152,7 @@ public final class DecisionNode {
         this.batches = new Batches(this);
         this.collections = new CollectionsClient(this);
         this.usage = new UsageClient(this);
+        this.keys = new KeysClient(this);
     }
 
     public static Builder builder() {
@@ -1137,6 +1139,11 @@ public final class DecisionNode {
     /** Per-key usage: what each API key used and spent over a period. */
     public UsageClient usage() {
         return usage;
+    }
+
+    /** Device keys: make, list, change and revoke the workspace's decide keys. */
+    public KeysClient keys() {
+        return keys;
     }
 
     /**

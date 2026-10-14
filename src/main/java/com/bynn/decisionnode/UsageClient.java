@@ -132,20 +132,9 @@ public final class UsageClient {
     /** The list's query, checked in the API's order: the period, labels, device, keys, scope, status, limit. */
     private static List<String[]> listQuery(UsageQuery u) {
         List<String[]> q = period(u.start, u.end, u.granularity, u.groupBy);
-        for (Map.Entry<String, String> label : u.labels.entrySet()) {
-            String value = label.getValue();
-            if (!LABEL_NAME.matcher(label.getKey()).matches() || value == null || value.isEmpty()
-                    || value.codePointCount(0, value.length()) > 64 || value.codePoints().anyMatch(c -> Character.getType(c) == Character.CONTROL)) {
-                throw LocalChecks.usage("A label filter is name:value, as labels are written.", null);
-            }
-            add(q, "label", label.getKey() + ":" + value);
-        }
+        labelFilters(q, u.labels);
         if (u.deviceId != null) {
-            String d = u.deviceId;
-            if (d.isEmpty() || d.length() > 128 || d.chars().anyMatch(c -> c < 0x20 || c > 0x7E) || d.startsWith(" ")) {
-                throw LocalChecks.usage("device_id is 1 to 128 printable ASCII characters, not starting with a space.", null);
-            }
-            add(q, "device_id", d);
+            add(q, "device_id", deviceIdFilter(u.deviceId));
         }
         for (int i = 0; i < u.keyIds.size(); i++) {
             String id = u.keyIds.get(i);
@@ -182,13 +171,34 @@ public final class UsageClient {
         return q;
     }
 
-    private static void add(List<String[]> q, String name, String value) {
+    /** Each label as {@code label=name:value}, by name, checked as the API checks a label filter. */
+    static void labelFilters(List<String[]> q, Map<String, String> labels) {
+        for (Map.Entry<String, String> label : labels.entrySet()) {
+            String value = label.getValue();
+            if (!LABEL_NAME.matcher(label.getKey()).matches() || value == null || value.isEmpty()
+                    || value.codePointCount(0, value.length()) > 64
+                    || value.codePoints().anyMatch(c -> Character.getType(c) == Character.CONTROL)) {
+                throw LocalChecks.usage("A label filter is name:value, as labels are written.", null);
+            }
+            add(q, "label", label.getKey() + ":" + value);
+        }
+    }
+
+    /** A device id filter, checked as the API checks it. */
+    static String deviceIdFilter(String d) {
+        if (d.isEmpty() || d.length() > 128 || d.chars().anyMatch(c -> c < 0x20 || c > 0x7E) || d.startsWith(" ")) {
+            throw LocalChecks.usage("device_id is 1 to 128 printable ASCII characters, not starting with a space.", null);
+        }
+        return d;
+    }
+
+    static void add(List<String[]> q, String name, String value) {
         if (value != null) {
             q.add(new String[] {name, value});
         }
     }
 
-    private static String query(List<String[]> q) {
+    static String query(List<String[]> q) {
         StringBuilder out = new StringBuilder();
         for (String[] p : q) {
             out.append(out.length() == 0 ? "?" : "&").append(escape(p[0])).append('=').append(escape(p[1]));
