@@ -99,6 +99,8 @@ final class Responses {
                     : "face_detection".equals(booster) ? faceDetectionReading(view)
                     : "face_recognition".equals(booster) ? faceRecognitionReading(view)
                     : "ocr".equals(booster) ? ocrReading(view)
+                    : "bynn_depth".equals(booster) ? depthReading(view)
+                    : "bynn_segment".equals(booster) ? segmentReading(view)
                     : null;
             if (typed != null) {
                 return typed;
@@ -171,6 +173,185 @@ final class Responses {
         }
         return new FaceRecognitionReading((String) image, faces, Collections.unmodifiableList(matches), (String) collectionName,
                 raw);
+    }
+
+    /**
+     * A Depth Vision reading: image, exactly 7 directions (numbers or null), ground, the grid's size
+     * and rows of numbers, the three depths and the picture's size; ahead a number or null.
+     */
+    private static DepthReading depthReading(Map<String, Object> raw) {
+        Object image = raw.get("image");
+        List<Object> dirs = Json.asList(raw.get("directions"));
+        Object ground = raw.get("ground");
+        Long rows = integer(raw.get("grid_rows"));
+        Long cols = integer(raw.get("grid_cols"));
+        List<Object> grid = Json.asList(raw.get("grid"));
+        double[] depths = numbers(raw, "depth_min", "depth_max", "depth_median");
+        Long width = integer(raw.get("width"));
+        Long height = integer(raw.get("height"));
+        Object ahead = raw.get("ahead");
+        if (!(image instanceof String) || dirs == null || dirs.size() != 7 || !(ground instanceof Boolean) || rows == null
+                || cols == null || grid == null || depths == null || width == null || height == null
+                || (ahead != null && Json.asDouble(ahead) == null)) {
+            return null;
+        }
+        List<Double> directions = new ArrayList<>(7);
+        for (Object d : dirs) {
+            if (d != null && Json.asDouble(d) == null) {
+                return null;
+            }
+            directions.add(d == null ? null : Json.asDouble(d));
+        }
+        List<List<Double>> cells = new ArrayList<>(grid.size());
+        for (Object row : grid) {
+            List<Double> values = numberList(row);
+            if (values == null) {
+                return null;
+            }
+            cells.add(values);
+        }
+        return new DepthReading((String) image, ahead == null ? null : Json.asDouble(ahead),
+                Collections.unmodifiableList(directions), (Boolean) ground, rows, cols, Collections.unmodifiableList(cells),
+                depths[0], depths[1], depths[2], width, height, raw);
+    }
+
+    /**
+     * A Segment Vision reading: image, the picture's size, the prompts read and the instances, each
+     * well formed; depth_source a string or null and assumed_hfov_deg a number or null.
+     */
+    private static SegmentReading segmentReading(Map<String, Object> raw) {
+        Object image = raw.get("image");
+        Long width = integer(raw.get("width"));
+        Long height = integer(raw.get("height"));
+        List<Object> prompts = Json.asList(raw.get("prompts"));
+        List<Object> found = Json.asList(raw.get("instances"));
+        Object source = raw.get("depth_source");
+        Object hfov = raw.get("assumed_hfov_deg");
+        if (!(image instanceof String) || width == null || height == null || prompts == null || found == null
+                || (source != null && !(source instanceof String)) || (hfov != null && Json.asDouble(hfov) == null)) {
+            return null;
+        }
+        List<String> phrases = new ArrayList<>(prompts.size());
+        for (Object p : prompts) {
+            if (!(p instanceof String text)) {
+                return null;
+            }
+            phrases.add(text);
+        }
+        List<SegmentInstance> instances = new ArrayList<>(found.size());
+        for (Object o : found) {
+            SegmentInstance instance = segmentInstance(Json.asMap(o));
+            if (instance == null) {
+                return null;
+            }
+            instances.add(instance);
+        }
+        return new SegmentReading((String) image, width, height, Collections.unmodifiableList(phrases),
+                Collections.unmodifiableList(instances), (String) source, hfov == null ? null : Json.asDouble(hfov), raw);
+    }
+
+    /** One Segment Vision instance; null when a required field is missing or of the wrong type. */
+    private static SegmentInstance segmentInstance(Map<String, Object> m) {
+        if (m == null || !(m.get("label") instanceof String label)) {
+            return null;
+        }
+        Double score = Json.asDouble(m.get("score"));
+        Double area = Json.asDouble(m.get("area"));
+        List<Double> box = numberList(m.get("box"));
+        List<SegmentPoint> polygon = points(m.get("polygon"));
+        SegmentPoint centroid = point(m.get("centroid"));
+        if (score == null || area == null || box == null || box.size() != 4 || polygon == null || centroid == null) {
+            return null;
+        }
+        SegmentOpening opening = null;
+        if (m.get("opening") != null) {
+            Map<String, Object> o = Json.asMap(m.get("opening"));
+            List<SegmentPoint> outline = o == null ? null : points(o.get("polygon"));
+            SegmentPoint centre = o == null ? null : point(o.get("centroid"));
+            SegmentPoint offset = o == null ? null : point(o.get("offset"));
+            double[] n = o == null ? null : numbers(o, "width", "height", "area");
+            if (outline == null || centre == null || offset == null || n == null) {
+                return null;
+            }
+            opening = new SegmentOpening(outline, centre, n[0], n[1], offset, n[2]);
+        }
+        SegmentDepth depth = null;
+        if (m.get("depth") != null) {
+            Map<String, Object> d = Json.asMap(m.get("depth"));
+            if (d == null) {
+                return null;
+            }
+            Double[] v = new Double[3];
+            String[] names = {"median", "opening_median", "opening_rim_median"};
+            for (int i = 0; i < 3; i++) {
+                Object x = d.get(names[i]);
+                if (x != null && Json.asDouble(x) == null) {
+                    return null;
+                }
+                v[i] = x == null ? null : Json.asDouble(x);
+            }
+            depth = new SegmentDepth(v[0], v[1], v[2]);
+        }
+        SegmentSize size = null;
+        if (m.get("size_m") != null) {
+            Map<String, Object> s = Json.asMap(m.get("size_m"));
+            double[] wh = s == null ? null : numbers(s, "width", "height");
+            if (wh == null) {
+                return null;
+            }
+            SegmentSize.Opening hole = null;
+            if (s.get("opening") != null) {
+                Map<String, Object> so = Json.asMap(s.get("opening"));
+                double[] owh = so == null ? null : numbers(so, "width", "height");
+                if (owh == null) {
+                    return null;
+                }
+                hole = new SegmentSize.Opening(owh[0], owh[1]);
+            }
+            size = new SegmentSize(wh[0], wh[1], hole);
+        }
+        return new SegmentInstance(label, score, new SegmentBox(box.get(0), box.get(1), box.get(2), box.get(3)),
+                polygon, area, centroid, opening, depth, size);
+    }
+
+    /** A JSON array of numbers, as doubles; null when it is not one. */
+    private static List<Double> numberList(Object value) {
+        List<Object> list = Json.asList(value);
+        if (list == null) {
+            return null;
+        }
+        List<Double> out = new ArrayList<>(list.size());
+        for (Object o : list) {
+            Double d = Json.asDouble(o);
+            if (d == null) {
+                return null;
+            }
+            out.add(d);
+        }
+        return Collections.unmodifiableList(out);
+    }
+
+    /** {@code [x, y]}; null when it is not two numbers. */
+    private static SegmentPoint point(Object value) {
+        List<Double> xy = numberList(value);
+        return xy == null || xy.size() != 2 ? null : new SegmentPoint(xy.get(0), xy.get(1));
+    }
+
+    /** {@code [[x, y], ...]}; null when any entry is not a point. */
+    private static List<SegmentPoint> points(Object value) {
+        List<Object> list = Json.asList(value);
+        if (list == null) {
+            return null;
+        }
+        List<SegmentPoint> out = new ArrayList<>(list.size());
+        for (Object o : list) {
+            SegmentPoint p = point(o);
+            if (p == null) {
+                return null;
+            }
+            out.add(p);
+        }
+        return Collections.unmodifiableList(out);
     }
 
     /** A face's box: four numbers, as sent; null when a corner is missing or not a number. */

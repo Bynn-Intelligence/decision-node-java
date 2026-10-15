@@ -112,6 +112,8 @@ class KotlinUsageTest {
             is OcrReading -> "text ${reading.text()}"
             is FaceDetectionReading -> "faces ${reading.faces()}"
             is FaceRecognitionReading -> "matches ${reading.matches().size}"
+            is DepthReading -> "ahead ${reading.ahead()}"
+            is SegmentReading -> "instances ${reading.instances().size}"
             is UnknownReading -> "unknown ${reading.booster()}"
         }
         assertEquals("age 27", text)

@@ -342,12 +342,36 @@ none). To turn a video file into frames, use the `dn` command line tool: `dn --v
 A booster is a specialist model that reads the request's images before the decision. Its reading
 is added to what the model sees as evidence and comes back in the response. The model still
 answers every question: a booster never answers one, and a request without boosters is answered
-exactly as before. Two boosters are available:
+exactly as before. These boosters are available:
 
 | Booster | Reads | Tells the model |
 |---|---|---|
 | `age` | A picture of a person | How old the person is, with a range and a confidence (the largest face is read) |
 | `ai_generated` | Any picture | How likely the picture was made by an image generator, which generator most likely, and whether the file carries Content Credentials (C2PA) and who signed them |
+| `bynn_depth` | Any picture | Depth Vision: distance in meters to the nearest obstacle straight ahead (the floor left out), seven directions from left to right, and a grid of up to 16 by 16 cells |
+| `bynn_segment` | Any picture | Segment Vision: what you name in words, each match's outline, box and centre and, with depth on, its distance and size in meters |
+
+Depth Vision's and Segment Vision's distances and sizes are estimates from one picture, for
+decisions and planning, never a safety stop. Their options go in `Booster.of(name).options(map)`,
+and the API checks them: Depth Vision takes `grid_size` (2 to 16, default 8); Segment Vision needs
+`prompt` (one phrase, or a list of 1 to 4, each at most 120 characters) and takes `max_instances`
+(1 to 16, default 8), `min_score` (0 to 1, default 0.25), `polygon_points` (3 to 64, default 24)
+and `depth` (default true).
+
+```java
+Decision d = dn.decide(DecideRequest.builder()
+    .image(Image.fromUrl("hall", "https://files.example.com/robot/hall.jpg"))
+    .booster(Booster.of("bynn_segment").options(Map.of("prompt", List.of("door", "chair"))))
+    .question("door_open", truth("Is there an open door the robot can pass through?"))
+    .build());
+
+SegmentReading hall = (SegmentReading) d.evidence("bynn_segment").results().get(0);
+for (SegmentInstance found : hall.instances()) {
+    // centroid as fractions of the picture; depth and sizeM null with depth off
+    System.out.println(found.label() + " at " + found.centroid() + ", "
+        + (found.depth() == null ? "no distance" : found.depth().median() + " m"));
+}
+```
 
 ```java
 Decision d = dn.decide(DecideRequest.builder()
@@ -407,7 +431,12 @@ DecideRequest.builder()
   (`image`, `faces`, and `ageYears`, `low`, `high`, `confidence`, each null when `faces` is 0), an
   `AiGeneratedReading` (`image`, `generated`, `confidence`, `method`, `topGenerator` with its
   `name` and `probability`, null unless the image is likely generated, `c2paSigner`, and `c2pa`:
-  `untrusted` when the file's Content Credentials validate but their signer is not trusted), or an
+  `untrusted` when the file's Content Credentials validate but their signer is not trusted), a
+  `DepthReading` (`ahead`, null when nothing is found ahead, seven `directions`, `ground`, the
+  `grid` with `gridRows` and `gridCols`, `depthMin`, `depthMax`, `depthMedian`, and the picture's
+  `width` and `height`), a `SegmentReading` (`width`, `height`, `prompts`, its `instances`, each a
+  `SegmentInstance` with `label`, `score`, `box`, `polygon`, `area`, `centroid`, and `opening`,
+  `depth` and `sizeM`, each null when absent, plus `depthSource` and `assumedHfovDeg`), or an
   `UnknownReading` with its fields in `raw()` for a booster newer than this SDK. `Reading` is a sealed interface, so a `switch` or Kotlin `when` over
   it is exhaustive.
 - `usage().boosterTokens()` is the readings' share of the input tokens, and `usage().boosters()`

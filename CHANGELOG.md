@@ -10,6 +10,11 @@ Implements version 1.3 of the DecisionNode SDK specification: boosters and fine-
 
 ### Added
 
+- Depth Vision (`bynn_depth`) and Segment Vision (`bynn_segment`) readings: `DepthReading`
+  (`ahead`, seven `directions`, `ground`, the `grid`, the depths and the picture's size) and
+  `SegmentReading` with its `SegmentInstance`s (`label`, `score`, `box`, `polygon`, `area`,
+  `centroid`, and `opening`, `depth` and `sizeM` when present), every number as sent; a reading of
+  another shape is an `UnknownReading`.
 - Device keys, on `DecisionNode.keys()`, for a Manage device keys key: `create` (`POST /v1/keys`,
   a `KeyCreate`, under an `Idempotency-Key` kept across attempts), `list` and `all`
   (`GET /v1/keys`, a `KeyListQuery`), `update` (`PATCH /v1/keys/{key_id}`, a `KeyUpdate` whose
