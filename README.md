@@ -12,13 +12,11 @@ their evidence, fine-tuned models, the models list, image uploads, sessions and 
 
 ## Install
 
-Not on Maven Central yet: the first release publishes it there, as the version below. Until then, install it from a clone of this repository with `./gradlew publishToMavenLocal`, add `mavenLocal()` to your repositories, and use the version in `gradle.properties`.
-
 Gradle:
 
 ```kotlin
 dependencies {
-    implementation("com.bynn:decisionnode:0.3.1")
+    implementation("com.bynn:decisionnode:0.3.2")
 }
 ```
 
@@ -28,7 +26,7 @@ Maven:
 <dependency>
   <groupId>com.bynn</groupId>
   <artifactId>decisionnode</artifactId>
-  <version>0.3.1</version>
+  <version>0.3.2</version>
 </dependency>
 ```
 
