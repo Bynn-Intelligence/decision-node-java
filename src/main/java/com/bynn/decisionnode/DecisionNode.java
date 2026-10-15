@@ -48,7 +48,7 @@ import javax.net.ssl.SSLContext;
  */
 public final class DecisionNode {
     /** This SDK's version, sent in the {@code User-Agent} header. */
-    public static final String VERSION = "0.3.0";
+    public static final String VERSION = "0.3.1";
     /** The version of the DecisionNode SDK specification this SDK implements. */
     public static final String SPEC_VERSION = "1.3";
 
