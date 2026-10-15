@@ -63,6 +63,10 @@ jobs:
           CURRENT=$(sed -n 's/^version=//p' gradle.properties)
           NEW="${CURRENT%.*}.$(( ${CURRENT##*.} + 1 ))"
           sed -i "s/^version=${CURRENT}$/version=${NEW}/" gradle.properties
+          # The client's VERSION constant (its User-Agent) moves with it; the
+          # build's versionMatchesTheBuild test fails if the two differ.
+          sed -i "s/VERSION = \"${CURRENT}\";/VERSION = \"${NEW}\";/" src/main/java/com/bynn/decisionnode/DecisionNode.java
+          grep -q "VERSION = \"${NEW}\";" src/main/java/com/bynn/decisionnode/DecisionNode.java
           echo "version=${NEW}" >> "$GITHUB_OUTPUT"
 
       - run: ./gradlew build --no-daemon
@@ -77,7 +81,7 @@ jobs:
           python3 .github/scripts/check_names.py --commits "$@" README.md
 
       - run: |
-          git add gradle.properties
+          git add gradle.properties src/main/java/com/bynn/decisionnode/DecisionNode.java
           git commit -m "Release v${{ steps.bump.outputs.version }} [skip publish]"
           git tag "v${{ steps.bump.outputs.version }}"
           git push origin HEAD:main "v${{ steps.bump.outputs.version }}"
