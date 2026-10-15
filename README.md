@@ -344,19 +344,19 @@ is added to what the model sees as evidence and comes back in the response. The 
 answers every question: a booster never answers one, and a request without boosters is answered
 exactly as before. These boosters are available:
 
-| Booster | Reads | Tells the model |
-|---|---|---|
-| `age` | A picture of a person | How old the person is, with a range and a confidence (the largest face is read) |
-| `ai_generated` | Any picture | How likely the picture was made by an image generator, which generator most likely, and whether the file carries Content Credentials (C2PA) and who signed them |
-| `bynn_depth` | Any picture | Depth Vision: distance in meters to the nearest obstacle straight ahead (the floor left out), seven directions from left to right, and a grid of up to 16 by 16 cells |
-| `bynn_segment` | Any picture | Segment Vision: what you name in words, each match's outline, box and centre and, with depth on, its distance and size in meters |
+| Booster | Reads | Tells the model | Options |
+|---|---|---|---|
+| `age` | A picture of a person | How old the person is, with a range and a confidence (the largest face is read) | None |
+| `ai_generated` | Any picture | How likely the picture was made by an image generator, which generator most likely when it reads as generated, and whether the file carries trusted Content Credentials (C2PA) and who signed them | None |
+| `face_detection` | Any picture | How many faces it shows and where: a box and a confidence per face; a picture with no face reads 0 faces | None |
+| `face_recognition` | A picture of a person | Whether a face matches an item of the collection the request names: one of your own collections, or `celebrities`, open to every workspace, where a match gives the person's name. Per match a box, a score and the item's reference, with its name or label | `collection` (required: your own collection's id, or `celebrities`); `threshold` (0 to 1, default 0.5: matches below it are not sent) |
+| `ocr` | Any picture | The text it shows, all of it by default, or what a `prompt` asks for: a formula in LaTeX, a table in HTML or Markdown, the fields of a JSON schema the prompt gives | `prompt` (at most 2,000 characters; left out, all the text, plain) |
+| `bynn_depth` | Any picture | Depth Vision: distance in meters to the nearest obstacle straight ahead (the floor left out), seven directions from left to right, and a grid of up to 16 by 16 cells | `grid_size` (2 to 16, default 8) |
+| `bynn_segment` | Any picture | Segment Vision: what you name in words, each match's outline, box and centre and, with depth on, its distance and size in meters | `prompt` (required: one phrase, or a list of 1 to 4, each at most 120 characters); `max_instances` (1 to 16, default 8); `min_score` (0 to 1, default 0.25); `polygon_points` (3 to 64, default 24); `depth` (default true) |
 
-Depth Vision's and Segment Vision's distances and sizes are estimates from one picture, for
-decisions and planning, never a safety stop. Their options go in `Booster.of(name).options(map)`,
-and the API checks them: Depth Vision takes `grid_size` (2 to 16, default 8); Segment Vision needs
-`prompt` (one phrase, or a list of 1 to 4, each at most 120 characters) and takes `max_instances`
-(1 to 16, default 8), `min_score` (0 to 1, default 0.25), `polygon_points` (3 to 64, default 24)
-and `depth` (default true).
+Options go in `Booster.of(name).options(map)`, and the API checks them: a bad value or an unknown
+key is its 400 `api_usage_error`. Depth Vision's and Segment Vision's distances and sizes are
+estimates from one picture, for decisions and planning, never a safety stop.
 
 ```java
 Decision d = dn.decide(DecideRequest.builder()
@@ -432,7 +432,11 @@ DecideRequest.builder()
   `AiGeneratedReading` (`image`, `generated`, `confidence`, `method`, `topGenerator` with its
   `name` and `probability`, null unless the image is likely generated, `c2paSigner`, and `c2pa`:
   `untrusted` when the file's Content Credentials validate but their signer is not trusted), a
-  `DepthReading` (`ahead`, null when nothing is found ahead, seven `directions`, `ground`, the
+  `FaceDetectionReading` (`faces` and `detections`, each a `FaceDetection` with its `box` and
+  `confidence`), a `FaceRecognitionReading` (`faces`, `collectionName`, and `matches`, each a
+  `FaceMatch` with its `box`, `score`, `collection`, `reference`, `name` or `label`,
+  `collectionName` and `metadata`), an `OcrReading` (`text`, `""` when the picture shows none, and
+  `truncated`, true when the reading was cut to fit the request), a `DepthReading` (`ahead`, null when nothing is found ahead, seven `directions`, `ground`, the
   `grid` with `gridRows` and `gridCols`, `depthMin`, `depthMax`, `depthMedian`, and the picture's
   `width` and `height`), a `SegmentReading` (`width`, `height`, `prompts`, its `instances`, each a
   `SegmentInstance` with `label`, `score`, `box`, `polygon`, `area`, `centroid`, and `opening`,

@@ -10,6 +10,9 @@ Implements version 1.3 of the DecisionNode SDK specification: boosters and fine-
 
 ### Added
 
+- The README lists every booster served, `age`, `ai_generated`, `face_detection`,
+  `face_recognition`, `ocr`, `bynn_depth` and `bynn_segment`, with its options; the readings'
+  documentation says the same.
 - Depth Vision (`bynn_depth`) and Segment Vision (`bynn_segment`) readings: `DepthReading`
   (`ahead`, seven `directions`, `ground`, the `grid`, the depths and the picture's size) and
   `SegmentReading` with its `SegmentInstance`s (`label`, `score`, `box`, `polygon`, `area`,

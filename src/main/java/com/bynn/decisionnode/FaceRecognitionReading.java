@@ -4,8 +4,10 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * A reading of the {@code face_recognition} booster: the faces one image shows, searched in a
- * collection. The booster's {@code collection} and {@code threshold} options are sent as given.
+ * A reading of the {@code face_recognition} booster: the faces one image shows, searched in the
+ * collection its {@code collection} option names (required: one of your own collections, or
+ * {@code celebrities}); its {@code threshold} option (0 to 1, default 0.5) leaves out matches
+ * below it.
  *
  * @param image   the id of the image read
  * @param faces   how many faces were searched; it may be more than {@code matches} lists
