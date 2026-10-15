@@ -1128,6 +1128,33 @@ class ConformanceTest {
                 list.add(e);
             }
             n.put("matches", list);
+        } else if (r instanceof DepthReading dr) {
+            n.put("kind", "bynn_depth");
+            n.put("image", dr.image());
+            n.put("ahead", dr.ahead());
+            n.put("directions", dr.directions());
+            n.put("ground", dr.ground());
+            n.put("grid_rows", dr.gridRows());
+            n.put("grid_cols", dr.gridCols());
+            n.put("grid", dr.grid());
+            n.put("depth_min", dr.depthMin());
+            n.put("depth_max", dr.depthMax());
+            n.put("depth_median", dr.depthMedian());
+            n.put("width", dr.width());
+            n.put("height", dr.height());
+        } else if (r instanceof SegmentReading sr) {
+            n.put("kind", "bynn_segment");
+            n.put("image", sr.image());
+            n.put("width", sr.width());
+            n.put("height", sr.height());
+            n.put("prompts", sr.prompts());
+            n.put("depth_source", sr.depthSource());
+            n.put("assumed_hfov_deg", sr.assumedHfovDeg());
+            List<Object> instances = new ArrayList<>();
+            for (SegmentInstance i : sr.instances()) {
+                instances.add(normInstance(i));
+            }
+            n.put("instances", instances);
         } else if (r instanceof OcrReading o) {
             n.put("kind", "ocr");
             n.put("image", o.image());
@@ -1138,6 +1165,67 @@ class ConformanceTest {
             n.put("raw", r.raw());
         }
         return n;
+    }
+
+    /** A Segment Vision match in the wire's fields and shapes: points as [x, y], an empty part as null. */
+    static Map<String, Object> normInstance(SegmentInstance i) {
+        Map<String, Object> n = new LinkedHashMap<>();
+        n.put("label", i.label());
+        n.put("score", i.score());
+        n.put("box", List.of(i.box().x1(), i.box().y1(), i.box().x2(), i.box().y2()));
+        n.put("polygon", pointList(i.polygon()));
+        n.put("area", i.area());
+        n.put("centroid", pointPair(i.centroid()));
+        if (i.opening() == null) {
+            n.put("opening", null);
+        } else {
+            Map<String, Object> o = new LinkedHashMap<>();
+            o.put("polygon", pointList(i.opening().polygon()));
+            o.put("centroid", pointPair(i.opening().centroid()));
+            o.put("width", i.opening().width());
+            o.put("height", i.opening().height());
+            o.put("offset", pointPair(i.opening().offset()));
+            o.put("area", i.opening().area());
+            n.put("opening", o);
+        }
+        if (i.depth() == null) {
+            n.put("depth", null);
+        } else {
+            Map<String, Object> d = new LinkedHashMap<>();
+            d.put("median", i.depth().median());
+            d.put("opening_median", i.depth().openingMedian());
+            d.put("opening_rim_median", i.depth().openingRimMedian());
+            n.put("depth", d);
+        }
+        if (i.sizeM() == null) {
+            n.put("size_m", null);
+        } else {
+            Map<String, Object> s = new LinkedHashMap<>();
+            s.put("width", i.sizeM().width());
+            s.put("height", i.sizeM().height());
+            if (i.sizeM().opening() == null) {
+                s.put("opening", null);
+            } else {
+                Map<String, Object> so = new LinkedHashMap<>();
+                so.put("width", i.sizeM().opening().width());
+                so.put("height", i.sizeM().opening().height());
+                s.put("opening", so);
+            }
+            n.put("size_m", s);
+        }
+        return n;
+    }
+
+    private static List<Object> pointPair(SegmentPoint p) {
+        return List.of(p.x(), p.y());
+    }
+
+    private static List<Object> pointList(List<SegmentPoint> points) {
+        List<Object> out = new ArrayList<>();
+        for (SegmentPoint p : points) {
+            out.add(pointPair(p));
+        }
+        return out;
     }
 
     static Map<String, Object> normBox(FaceBox b) {

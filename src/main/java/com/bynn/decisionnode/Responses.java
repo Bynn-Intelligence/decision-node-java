@@ -190,8 +190,8 @@ final class Responses {
         Long width = integer(raw.get("width"));
         Long height = integer(raw.get("height"));
         Object ahead = raw.get("ahead");
-        if (!(image instanceof String) || dirs == null || dirs.size() != 7 || !(ground instanceof Boolean) || rows == null
-                || cols == null || grid == null || depths == null || width == null || height == null
+        if (!(image instanceof String) || dirs == null || dirs.size() != 7 || !(ground instanceof Boolean) || !whole(rows)
+                || !whole(cols) || grid == null || depths == null || !whole(width) || !whole(height)
                 || (ahead != null && Json.asDouble(ahead) == null)) {
             return null;
         }
@@ -227,7 +227,7 @@ final class Responses {
         List<Object> found = Json.asList(raw.get("instances"));
         Object source = raw.get("depth_source");
         Object hfov = raw.get("assumed_hfov_deg");
-        if (!(image instanceof String) || width == null || height == null || prompts == null || found == null
+        if (!(image instanceof String) || !whole(width) || !whole(height) || prompts == null || found == null
                 || (source != null && !(source instanceof String)) || (hfov != null && Json.asDouble(hfov) == null)) {
             return null;
         }
@@ -312,6 +312,11 @@ final class Responses {
         }
         return new SegmentInstance(label, score, new SegmentBox(box.get(0), box.get(1), box.get(2), box.get(3)),
                 polygon, area, centroid, opening, depth, size);
+    }
+
+    /** A JSON integer of at least 0. */
+    private static boolean whole(Long n) {
+        return n != null && n >= 0;
     }
 
     /** A JSON array of numbers, as doubles; null when it is not one. */

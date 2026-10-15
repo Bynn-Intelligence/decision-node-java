@@ -59,8 +59,9 @@ class VisionReadingsTest {
                 + DEPTH.replace("\"grid_rows\":2", "\"grid_rows\":2.5") + ","
                 + DEPTH.replace("[1.5,2,2.25]", "[1.5,null,2.25]") + ","
                 + DEPTH.replace("\"ahead\":2.41", "\"ahead\":\"far\"") + ","
-                + DEPTH.replace("\"depth_median\":2.35,", "") + "]");
-        assertEquals(8, r.size());
+                + DEPTH.replace("\"depth_median\":2.35,", "") + ","
+                + DEPTH.replace("\"width\":1280", "\"width\":-1") + "]");
+        assertEquals(9, r.size());
         r.forEach(each -> assertEquals("bynn_depth", assertInstanceOf(UnknownReading.class, each).booster()));
     }
 
@@ -116,8 +117,9 @@ class VisionReadingsTest {
                 + head + INSTANCE.replace("{\"width\":0.8,\"height\":2.0}", "{\"width\":0.8}") + "]},"
                 + head + INSTANCE.replace("\"label\":\"door\",", "") + "]},"
                 + "{\"image\":\"hall\",\"width\":1280,\"height\":720,\"prompts\":[1],\"instances\":[]},"
-                + "{\"image\":\"hall\",\"width\":1280,\"height\":720,\"prompts\":[\"door\"],\"instances\":[],\"depth_source\":5}]");
-        assertEquals(9, r.size());
+                + "{\"image\":\"hall\",\"width\":1280,\"height\":720,\"prompts\":[\"door\"],\"instances\":[],\"depth_source\":5},"
+                + "{\"image\":\"hall\",\"width\":1280,\"height\":-720,\"prompts\":[\"door\"],\"instances\":[]}]");
+        assertEquals(10, r.size());
         r.forEach(each -> assertEquals("bynn_segment", assertInstanceOf(UnknownReading.class, each).booster()));
         assertFalse(r.isEmpty());
     }
