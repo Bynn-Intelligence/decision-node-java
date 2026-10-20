@@ -1191,12 +1191,11 @@ class ConformanceTest {
             n.put("kind", "knowledge");
             n.put("collection", k.collection());
             n.put("collection_name", k.collectionName());
-            n.put("corpus", k.corpus() == null ? null : wire("version", k.corpus().version()));
-            n.put("query", k.query() == null ? null
-                    : wire("source", k.query().source(), "tokens", k.query().tokens(), "text", k.query().text()));
-            n.put("budget", k.budget() == null ? null : wire("mode", k.budget().mode(), "tokens", k.budget().tokens(), "entry",
-                    k.budget().entry(), "cause", k.budget().cause()));
-            n.put("scope", k.scope() == null ? null : wire("key", k.scope().key(), "value", k.scope().value()));
+            // The nested objects as sent, every key kept.
+            n.put("corpus", k.corpus() == null ? null : k.corpus().raw());
+            n.put("query", k.query() == null ? null : k.query().raw());
+            n.put("budget", k.budget() == null ? null : k.budget().raw());
+            n.put("scope", k.scope() == null ? null : k.scope().raw());
             n.put("warnings", k.warnings());
             List<Object> passages = new ArrayList<>();
             for (KnowledgePassage p : k.passages()) {
@@ -1207,8 +1206,7 @@ class ConformanceTest {
             n.put("passages", passages);
             n.put("omitted", k.omitted());
             n.put("pending_items", k.pendingItems());
-            n.put("search", k.search() == null ? null
-                    : wire("plan", k.search().plan(), "candidates", k.search().candidates(), "fallback", k.search().fallback()));
+            n.put("search", k.search() == null ? null : k.search().raw());
             n.put("truncated", k.truncated());
         } else if (r instanceof OcrReading o) {
             n.put("kind", "ocr");

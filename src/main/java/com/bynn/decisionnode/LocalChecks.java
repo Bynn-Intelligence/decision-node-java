@@ -968,26 +968,17 @@ final class LocalChecks {
         return entries;
     }
 
-    /** A text item's reference, pin rank, label and metadata, with the text route's words. */
+    /** A text item's reference, pin rank, label and metadata: the entries of every collection item's (suite 1.15), and the pin rank's. */
     static List<Map<String, Object>> textFieldEntries(Map<String, Object> f) {
         List<Map<String, Object>> entries = new ArrayList<>();
         if (f.containsKey("reference")) {
-            Object r = f.get("reference");
-            if (!(r instanceof String ref && Pattern.compile(ITEM_REFERENCE_PATTERN).matcher(ref).matches())) {
-                entries.add(entry("string_pattern_mismatch", List.of("body", "reference"),
-                        "String should match pattern '" + ITEM_REFERENCE_PATTERN + "'", echoed(r), null));
-            }
+            entries.addAll(stringEntries(List.of("body", "reference"), f.get("reference"), ITEM_REFERENCE_MAX, ITEM_REFERENCE_PATTERN));
         }
         if (f.containsKey("pin_rank")) {
             entries.addAll(pinRankEntries(f.get("pin_rank")));
         }
         if (f.get("label") != null) {
-            Object l = f.get("label");
-            if (!(l instanceof String label) || label.isEmpty() || label.codePointCount(0, label.length()) > ITEM_LABEL_MAX
-                    || hasControl(label)) {
-                entries.add(entry("string_too_long", List.of("body", "label"),
-                        "A label is 1 to 128 characters with no control or invisible characters", echoed(l), null));
-            }
+            entries.addAll(stringEntries(List.of("body", "label"), f.get("label"), ITEM_LABEL_MAX, null));
         }
         if (f.containsKey("metadata")) {
             entries.addAll(metadataEntries(f.get("metadata")));
@@ -995,23 +986,6 @@ final class LocalChecks {
         return entries;
     }
 
-    /** A control or invisible character: Unicode categories Cc, Cf, Zl and Zp. */
-    private static boolean hasControl(String s) {
-        return s.codePoints().anyMatch(c -> {
-            int t = Character.getType(c);
-            return t == Character.CONTROL || t == Character.FORMAT || t == Character.LINE_SEPARATOR
-                    || t == Character.PARAGRAPH_SEPARATOR;
-        });
-    }
-
-    /**
-     * An enrollment: an image, a reference of 1 to 64 of {@code [A-Za-z0-9_.:-]} (its length first,
-     * then the pattern) and, when given, a label of 1 to 128 characters (the API's 422 entries). Of
-     * the image only a URL's rules are checked here.
-     */
-    static void collectionEnroll(Object image, Object reference, Object label) {
-        collectionEnroll(image, reference, label, null);
-    }
 
     /** {@link #collectionEnroll(Object, Object, Object)} with the item's metadata, checked when given. */
     static void collectionEnroll(Object image, Object reference, Object label, Object metadata) {

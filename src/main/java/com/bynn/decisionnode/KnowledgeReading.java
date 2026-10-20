@@ -47,8 +47,13 @@ public record KnowledgeReading(
         return "knowledge";
     }
 
-    /** The knowledge base's version: it moves with every document that becomes ready or is deleted. */
-    public record Corpus(Long version) {}
+    /**
+     * The knowledge base's version: it moves with every document that becomes ready or is deleted.
+     *
+     * @param version the version read
+     * @param raw     the object exactly as sent
+     */
+    public record Corpus(Long version, Map<String, Object> raw) {}
 
     /**
      * What was searched for.
@@ -57,8 +62,9 @@ public record KnowledgeReading(
      *               option), {@code none} ({@code top_k} 0) or any other value
      * @param tokens the query's tokens
      * @param text   the query's text, with {@code include_text} and on a search; null otherwise
+     * @param raw    the object exactly as sent
      */
-    public record Query(String source, Long tokens, String text) {}
+    public record Query(String source, Long tokens, String text, Map<String, Object> raw) {}
 
     /**
      * The passages' token budget.
@@ -69,16 +75,18 @@ public record KnowledgeReading(
      * @param cause  why a long entry was taken: {@code state}, {@code images},
      *               {@code other_boosters}, {@code pinned}, {@code fixed}, {@code require_floor}, any
      *               other value, or null
+     * @param raw    the object exactly as sent
      */
-    public record Budget(String mode, Long tokens, String entry, String cause) {}
+    public record Budget(String mode, Long tokens, String entry, String cause, Map<String, Object> raw) {}
 
     /**
      * The collection's scope.
      *
      * @param key   the collection's scope key
      * @param value the value named; null when the request named none
+     * @param raw   the object exactly as sent
      */
-    public record Scope(String key, String value) {}
+    public record Scope(String key, String value, Map<String, Object> raw) {}
 
     /**
      * How the search ran.
@@ -86,6 +94,7 @@ public record KnowledgeReading(
      * @param plan       the plan, as sent
      * @param candidates the candidates considered
      * @param fallback   true when an exact rerun made up a short candidate list
+     * @param raw        the object exactly as sent
      */
-    public record Search(String plan, Long candidates, Boolean fallback) {}
+    public record Search(String plan, Long candidates, Boolean fallback, Map<String, Object> raw) {}
 }

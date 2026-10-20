@@ -481,7 +481,8 @@ class KnowledgeTest {
         assertEquals("Claims policy", r.collectionName());
         assertEquals(41L, r.corpus().version());
         assertEquals("receipts", r.query().text());
-        assertEquals(new KnowledgeReading.Scope("mission", "M-42"), r.scope());
+        assertEquals("mission", r.scope().key());
+        assertEquals("M-42", r.scope().value());
         assertEquals(List.of("budget_floor"), r.warnings());
         assertEquals(2, r.passages().size());
         KnowledgePassage pin = r.passages().get(0);

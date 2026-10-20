@@ -427,16 +427,16 @@ final class Responses {
         }
         Map<String, Object> omitted = Json.asMap(raw.get("omitted"));
         return new KnowledgeReading((String) collection, str(raw.get("collection_name")),
-                corpus == null ? null : new KnowledgeReading.Corpus(integer(corpus.get("version"))),
+                corpus == null ? null : new KnowledgeReading.Corpus(integer(corpus.get("version")), Collections.unmodifiableMap(corpus)),
                 query == null ? null : new KnowledgeReading.Query(str(query.get("source")), integer(query.get("tokens")),
-                        str(query.get("text"))),
+                        str(query.get("text")), Collections.unmodifiableMap(query)),
                 budget == null ? null : new KnowledgeReading.Budget(str(budget.get("mode")), integer(budget.get("tokens")),
-                        str(budget.get("entry")), str(budget.get("cause"))),
-                scope == null ? null : new KnowledgeReading.Scope(str(scope.get("key")), str(scope.get("value"))),
+                        str(budget.get("entry")), str(budget.get("cause")), Collections.unmodifiableMap(budget)),
+                scope == null ? null : new KnowledgeReading.Scope(str(scope.get("key")), str(scope.get("value")), Collections.unmodifiableMap(scope)),
                 Collections.unmodifiableList(warnings), Collections.unmodifiableList(passages),
                 omitted == null ? Map.of() : Collections.unmodifiableMap(omitted), integer(raw.get("pending_items")),
                 search == null ? null : new KnowledgeReading.Search(str(search.get("plan")), integer(search.get("candidates")),
-                        bool(search.get("fallback"))),
+                        bool(search.get("fallback")), Collections.unmodifiableMap(search)),
                 bool(raw.get("truncated")), raw);
     }
 
