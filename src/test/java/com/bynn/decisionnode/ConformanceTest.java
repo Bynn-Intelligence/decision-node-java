@@ -222,12 +222,17 @@ class ConformanceTest {
             for (int i = 0; i < expected.size(); i++) {
                 match(expected.get(i), got.get(i), kind + "[" + i + "]");
             }
-        } else if (exp.containsKey("collection") || exp.containsKey("item") || exp.containsKey("item_page")
+        } else if (exp.containsKey("knowledge")) {
+            if (!(result instanceof KnowledgeReading)) {
+                fail("knowledge: expected a KnowledgeReading, got " + result);
+            }
+            match(exp.get("knowledge"), normReading((KnowledgeReading) result), "knowledge");
+        } else if (exp.containsKey("collection") || exp.containsKey("item") || exp.containsKey("item_page") || exp.containsKey("chunk_page")
                 || exp.containsKey("deleted") || exp.containsKey("key_usage") || exp.containsKey("usage_page")
                 || exp.containsKey("created_key") || exp.containsKey("api_key") || exp.containsKey("key_page")
                 || exp.containsKey("key_revoked") || exp.containsKey("keys_revoked")) {
-            String kind = List.of("collection", "item", "item_page", "deleted", "key_usage", "usage_page", "created_key", "api_key",
-                            "key_page", "key_revoked", "keys_revoked").stream()
+            String kind = List.of("collection", "item", "item_page", "chunk_page", "deleted", "key_usage", "usage_page", "created_key",
+                            "api_key", "key_page", "key_revoked", "keys_revoked").stream()
                     .filter(exp::containsKey).findFirst().orElseThrow();
             match(exp.get(kind), result, kind);
         } else {
@@ -322,6 +327,9 @@ class ConformanceTest {
             }
         } else if (exp.containsKey("attempts")) {
             assertEquals(((Number) exp.get("attempts")).intValue(), log.size(), "attempts: " + summary(log));
+        }
+        if (exp.containsKey("distinct_header")) {
+            checkDistinctHeader(map(exp.get("distinct_header")), log);
         }
         if (exp.containsKey("request_sequence")) {
             checkSequence(list(exp.get("request_sequence")), log);
@@ -749,6 +757,23 @@ class ConformanceTest {
         }
     }
 
+    /** Each request the spec picks carries its own value of the header: a resend whose body changed has a new key. */
+    private static void checkDistinctHeader(Map<String, Object> spec, List<Object> log) {
+        String name = ((String) spec.get("name")).toLowerCase(java.util.Locale.ROOT);
+        String suffix = (String) spec.get("path_suffix");
+        String method = (String) spec.get("method");
+        List<Object> values = new ArrayList<>();
+        for (Object o : log) {
+            Map<String, Object> r = map(o);
+            if ((suffix == null || ((String) r.get("path")).endsWith(suffix)) && (method == null || method.equals(r.get("method")))) {
+                values.add(mapOrEmpty(r.get("headers")).get(name));
+            }
+        }
+        if (values.size() != ((Number) spec.get("count")).intValue() || values.contains(null) || new HashSet<>(values).size() != values.size()) {
+            fail("distinct_header " + name + ": expected " + spec.get("count") + " distinct values, got " + values);
+        }
+    }
+
     private static void checkSequence(List<Object> expected, List<Object> log) {
         if (expected.size() != log.size()) {
             fail("request sequence: expected " + expected.size() + " requests, the mock received " + log.size() + ": " + summary(log));
@@ -872,8 +897,14 @@ class ConformanceTest {
                 }
                 case "answer" -> match(mapOrEmpty(spec.get("answer")), normAnswer((Answer) result), path + ".answer");
                 case "batch" -> match(mapOrEmpty(spec.get("batch")), ((Batch) result).raw(), path + ".batch");
-                case "collection", "item", "item_page", "deleted", "key_usage", "usage_page", "created_key", "api_key", "key_page",
-                        "key_revoked", "keys_revoked" -> match(mapOrEmpty(spec.get(kind)), result, path + "." + kind);
+                case "collection", "item", "item_page", "chunk_page", "deleted", "key_usage", "usage_page", "created_key", "api_key",
+                        "key_page", "key_revoked", "keys_revoked" -> match(mapOrEmpty(spec.get(kind)), result, path + "." + kind);
+                case "knowledge" -> {
+                    if (!(result instanceof KnowledgeReading)) {
+                        fail(path + ": expected a KnowledgeReading, got " + result);
+                    }
+                    match(mapOrEmpty(spec.get("knowledge")), normReading((KnowledgeReading) result), path + ".knowledge");
+                }
                 case "collections", "usage_items", "api_keys" -> {
                     List<?> expected = list(spec.get(kind));
                     List<?> got = (List<?>) result;
@@ -1155,6 +1186,30 @@ class ConformanceTest {
                 instances.add(normInstance(i));
             }
             n.put("instances", instances);
+        } else if (r instanceof KnowledgeReading k) {
+            // The passages as the wire writes them, an empty field as null.
+            n.put("kind", "knowledge");
+            n.put("collection", k.collection());
+            n.put("collection_name", k.collectionName());
+            n.put("corpus", k.corpus() == null ? null : wire("version", k.corpus().version()));
+            n.put("query", k.query() == null ? null
+                    : wire("source", k.query().source(), "tokens", k.query().tokens(), "text", k.query().text()));
+            n.put("budget", k.budget() == null ? null : wire("mode", k.budget().mode(), "tokens", k.budget().tokens(), "entry",
+                    k.budget().entry(), "cause", k.budget().cause()));
+            n.put("scope", k.scope() == null ? null : wire("key", k.scope().key(), "value", k.scope().value()));
+            n.put("warnings", k.warnings());
+            List<Object> passages = new ArrayList<>();
+            for (KnowledgePassage p : k.passages()) {
+                passages.add(wire("n", p.n(), "pinned", p.pinned(), "item", p.item(), "reference", p.reference(), "title", p.title(),
+                        "heading", p.heading(), "chunk", p.chunk(), "byte_start", p.byteStart(), "byte_end", p.byteEnd(), "tokens",
+                        p.tokens(), "score", p.score(), "lexical", p.lexical(), "rendered", p.rendered(), "text", p.text()));
+            }
+            n.put("passages", passages);
+            n.put("omitted", k.omitted());
+            n.put("pending_items", k.pendingItems());
+            n.put("search", k.search() == null ? null
+                    : wire("plan", k.search().plan(), "candidates", k.search().candidates(), "fallback", k.search().fallback()));
+            n.put("truncated", k.truncated());
         } else if (r instanceof OcrReading o) {
             n.put("kind", "ocr");
             n.put("image", o.image());
@@ -1165,6 +1220,15 @@ class ConformanceTest {
             n.put("raw", r.raw());
         }
         return n;
+    }
+
+    /** A map of these keys and values, in order; a null value kept. */
+    private static Map<String, Object> wire(Object... kv) {
+        Map<String, Object> m = new LinkedHashMap<>();
+        for (int i = 0; i < kv.length; i += 2) {
+            m.put((String) kv[i], kv[i + 1]);
+        }
+        return m;
     }
 
     /** A Segment Vision match in the wire's fields and shapes: points as [x, y], an empty part as null. */
@@ -1725,6 +1789,11 @@ class ConformanceTest {
                 return async ? join(client.usage().allAsync(usageQuery(args))) : client.usage().all(usageQuery(args));
             case "collections.create": {
                 String name = (String) args.get("name");
+                if (args.containsKey("scope_key")) {
+                    String type = args.containsKey("type") ? (String) args.get("type") : "face";
+                    return async ? join(client.collections().createAsync(name, type, (String) args.get("scope_key")))
+                            : client.collections().create(name, type, (String) args.get("scope_key"));
+                }
                 if (args.containsKey("type")) {
                     return async ? join(client.collections().createAsync(name, (String) args.get("type")))
                             : client.collections().create(name, (String) args.get("type"));
@@ -1763,6 +1832,15 @@ class ConformanceTest {
                     Map<String, Object> m = (Map<String, Object>) args.get("metadata");
                     u.metadata(m);
                 }
+                if (args.containsKey("pinned")) {
+                    u.pinned((Boolean) args.get("pinned"));
+                }
+                if (args.containsKey("pin_rank")) {
+                    u.pinRank(((Number) args.get("pin_rank")).intValue());
+                }
+                if (args.containsKey("title")) {
+                    u.title((String) args.get("title"));
+                }
                 String id = (String) args.get("collection_id");
                 String item = (String) args.get("item_id");
                 return async ? join(client.collections().updateItemAsync(id, item, u.build()))
@@ -1780,6 +1858,79 @@ class ConformanceTest {
             case "collections.delete_item":
                 return async ? join(client.collections().deleteItemAsync((String) args.get("collection_id"), (String) args.get("item_id")))
                         : client.collections().deleteItem((String) args.get("collection_id"), (String) args.get("item_id"));
+            case "collections.add_document": {
+                String id = (String) args.get("collection_id");
+                Document d = (Document) args.get("document");
+                DocumentOptions o = documentOptions(args);
+                return async ? join(client.collections().addDocumentAsync(id, d, o)) : client.collections().addDocument(id, d, o);
+            }
+            case "collections.replace_document": {
+                String id = (String) args.get("collection_id");
+                String item = (String) args.get("item_id");
+                Document d = (Document) args.get("document");
+                DocumentOptions o = documentOptions(args);
+                return async ? join(client.collections().replaceDocumentAsync(id, item, d, o))
+                        : client.collections().replaceDocument(id, item, d, o);
+            }
+            case "collections.get_item": {
+                String id = (String) args.get("collection_id");
+                String item = (String) args.get("item_id");
+                boolean text = Boolean.TRUE.equals(args.get("include_text"));
+                return async ? join(client.collections().getItemAsync(id, item, text)) : client.collections().getItem(id, item, text);
+            }
+            case "collections.list_chunks": {
+                String id = (String) args.get("collection_id");
+                String item = (String) args.get("item_id");
+                Integer offset = args.get("offset") == null ? null : ((Number) args.get("offset")).intValue();
+                Integer limit = args.get("limit") == null ? null : ((Number) args.get("limit")).intValue();
+                return async ? join(client.collections().listChunksAsync(id, item, offset, limit))
+                        : client.collections().listChunks(id, item, offset, limit);
+            }
+            case "collections.search": {
+                String id = (String) args.get("collection_id");
+                String query = (String) args.get("query");
+                SearchOptions.Builder o = SearchOptions.builder();
+                if (args.get("scope") != null) {
+                    o.scope((String) args.get("scope"));
+                }
+                if (args.get("match") != null) {
+                    o.match(map(args.get("match")));
+                }
+                if (args.get("filter") != null) {
+                    o.filter(args.get("filter"));
+                }
+                if (args.get("top_k") != null) {
+                    o.topK(((Number) args.get("top_k")).intValue());
+                }
+                if (args.get("pinned") != null) {
+                    o.pinned((Boolean) args.get("pinned"));
+                }
+                if (args.get("max_tokens") instanceof String t) {
+                    o.maxTokens(t);
+                } else if (args.get("max_tokens") != null) {
+                    o.maxTokens(((Number) args.get("max_tokens")).intValue());
+                }
+                return async ? join(client.collections().searchAsync(id, query, o.build()))
+                        : client.collections().search(id, query, o.build());
+            }
+            case "collections.wait_until_ready": {
+                String id = (String) args.get("collection_id");
+                String item = (String) args.get("item_id");
+                Duration timeout = args.get("timeout") == null ? null : seconds(args.get("timeout"));
+                Duration interval = args.get("poll_interval") == null ? null : seconds(args.get("poll_interval"));
+                return async ? join(client.collections().waitUntilReadyAsync(id, item, timeout, interval))
+                        : client.collections().waitUntilReady(id, item, timeout, interval);
+            }
+            case "collections.delete_failed_items":
+                return async ? join(client.collections().deleteFailedItemsAsync((String) args.get("collection_id")))
+                        : client.collections().deleteFailedItems((String) args.get("collection_id"));
+            case "upload_documents": {
+                List<Document> docs = new ArrayList<>();
+                for (Object o : list(args.get("documents"))) {
+                    docs.add((Document) o);
+                }
+                return async ? join(client.uploadDocumentsAsync(docs)) : client.uploadDocuments(docs);
+            }
             default:
                 throw new AssertionError("unknown method " + method);
         }
@@ -2052,6 +2203,10 @@ class ConformanceTest {
                     }
                     case "$frame":
                         return videoFrame(map(decode(e.getValue(), ctx)));
+                    case "$knowledge":
+                        return knowledgeBooster(map(decode(e.getValue(), ctx)));
+                    case "$document":
+                        return document(map(decode(e.getValue(), ctx)));
                     case "$booster": {
                         // Booster(name, images, require, options), each setting only when present
                         Map<String, Object> a = map(decode(e.getValue(), ctx));
@@ -2148,6 +2303,147 @@ class ConformanceTest {
             data = Arrays.copyOf(data, Math.max(data.length, ((Number) a.get("pad_to")).intValue()));
         }
         return Image.fromBytes(id, data, mediaType);
+    }
+
+    /**
+     * The knowledge booster from its builder, every option the case gives set; an option of a type
+     * the typed builder does not take goes in the wire form, which the client sends as given.
+     */
+    private static Object knowledgeBooster(Map<String, Object> a) {
+        boolean typed = (a.get("collection") instanceof String)
+                && (!a.containsKey("query") || a.get("query") instanceof String)
+                && (!a.containsKey("scope") || a.get("scope") instanceof String)
+                && (!a.containsKey("match") || a.get("match") instanceof Map)
+                && (!a.containsKey("top_k") || a.get("top_k") instanceof Integer)
+                && (!a.containsKey("max_tokens") || a.get("max_tokens") instanceof Integer || a.get("max_tokens") instanceof String)
+                && (!a.containsKey("pinned") || a.get("pinned") instanceof Boolean)
+                && (!a.containsKey("min_score") || (a.get("min_score") instanceof Number && !(a.get("min_score") instanceof BigDecimal)))
+                && (!a.containsKey("include_text") || a.get("include_text") instanceof Boolean)
+                && (!a.containsKey("require") || a.get("require") instanceof Boolean);
+        if (!typed) {
+            Map<String, Object> options = new LinkedHashMap<>();
+            for (String k : List.of("collection", "query", "scope", "match", "filter", "top_k", "max_tokens", "pinned", "min_score",
+                    "include_text")) {
+                if (a.containsKey(k) && a.get(k) != null) {
+                    options.put(k, a.get(k));
+                }
+            }
+            Map<String, Object> b = new LinkedHashMap<>();
+            b.put("name", "knowledge");
+            if (Boolean.TRUE.equals(a.get("require"))) {
+                b.put("require", true);
+            }
+            b.put("options", options);
+            return b;
+        }
+        KnowledgeBooster k = KnowledgeBooster.of((String) a.get("collection"));
+        if (a.get("query") != null) {
+            k.query((String) a.get("query"));
+        }
+        if (a.get("scope") != null) {
+            k.scope((String) a.get("scope"));
+        }
+        if (a.get("match") != null) {
+            k.match(map(a.get("match")));
+        }
+        if (a.get("filter") != null) {
+            k.filter(a.get("filter"));
+        }
+        if (a.get("top_k") != null) {
+            k.topK((Integer) a.get("top_k"));
+        }
+        if (a.get("max_tokens") instanceof Integer n) {
+            k.maxTokens(n);
+        } else if (a.get("max_tokens") instanceof String t) {
+            k.maxTokens(t);
+        }
+        if (a.get("pinned") != null) {
+            k.pinned((Boolean) a.get("pinned"));
+        }
+        if (a.get("min_score") != null) {
+            k.minScore(((Number) a.get("min_score")).doubleValue());
+        }
+        if (a.get("include_text") != null) {
+            k.includeText((Boolean) a.get("include_text"));
+        }
+        if (a.get("require") != null) {
+            k.require((Boolean) a.get("require"));
+        }
+        return k.build();
+    }
+
+    /**
+     * A document: text, a file by path, bytes ({@code data_base64}, {@code data_text} as UTF-8,
+     * {@code repeat_text}) or a stream ({@code stream_base64}), or an upload id; {@code pad_to} as
+     * for an image.
+     */
+    private static Document document(Map<String, Object> a) {
+        String contentType = (String) a.get("content_type");
+        String filename = (String) a.get("filename");
+        if (a.containsKey("text")) {
+            return a.containsKey("format") ? Document.fromText((String) a.get("text"), (String) a.get("format"))
+                    : Document.fromText((String) a.get("text"));
+        }
+        if (a.containsKey("upload_id")) {
+            return Document.fromUpload((String) a.get("upload_id"));
+        }
+        if (a.containsKey("path") && !a.containsKey("pad_to")) {
+            return Document.fromPath(root.resolve((String) a.get("path")), contentType, filename);
+        }
+        byte[] data;
+        try {
+            if (a.containsKey("data_text")) {
+                data = ((String) a.get("data_text")).getBytes(StandardCharsets.UTF_8);
+            } else if (a.containsKey("repeat_text")) {
+                Map<String, Object> r = map(a.get("repeat_text"));
+                data = ((String) r.get("repeat")).repeat(((Number) r.get("times")).intValue()).getBytes(StandardCharsets.UTF_8);
+            } else if (a.containsKey("path")) {
+                Path p = root.resolve((String) a.get("path"));
+                data = Files.readAllBytes(p);
+                if (filename == null) {
+                    filename = p.getFileName().toString();
+                }
+            } else {
+                String b64 = (String) (a.containsKey("data_base64") ? a.get("data_base64") : a.get("stream_base64"));
+                data = Base64.getDecoder().decode(b64);
+            }
+        } catch (IOException e) {
+            throw new AssertionError(e);
+        }
+        if (a.containsKey("pad_to")) {
+            data = Arrays.copyOf(data, Math.max(data.length, ((Number) a.get("pad_to")).intValue()));
+        }
+        if (a.containsKey("stream_base64")) {
+            return Document.fromStream(new java.io.ByteArrayInputStream(data), contentType, filename);
+        }
+        return Document.fromBytes(data, contentType, filename);
+    }
+
+    /** A document's fields from a case's arguments; a field the case leaves out is not set. */
+    private static DocumentOptions documentOptions(Map<String, Object> args) {
+        DocumentOptions.Builder o = DocumentOptions.builder();
+        if (args.get("title") != null) {
+            o.title((String) args.get("title"));
+        }
+        if (args.get("reference") != null) {
+            o.reference((String) args.get("reference"));
+        }
+        if (args.get("pinned") != null) {
+            o.pinned((Boolean) args.get("pinned"));
+        }
+        if (args.get("pin_rank") != null) {
+            o.pinRank(((Number) args.get("pin_rank")).intValue());
+        }
+        if (args.get("label") != null) {
+            o.label((String) args.get("label"));
+        }
+        if (args.get("metadata") != null) {
+            o.metadata(map(args.get("metadata")));
+        }
+        if (Boolean.TRUE.equals(args.get("wait"))) {
+            o.waitUntilReady(true);
+        }
+        return o.build();
     }
 
     private static Object resolve(String path, Map<String, Object> ctx) {

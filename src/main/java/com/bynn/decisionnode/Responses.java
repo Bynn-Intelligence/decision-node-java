@@ -101,6 +101,7 @@ final class Responses {
                     : "ocr".equals(booster) ? ocrReading(view)
                     : "bynn_depth".equals(booster) ? depthReading(view)
                     : "bynn_segment".equals(booster) ? segmentReading(view)
+                    : "knowledge".equals(booster) ? knowledgeReading(view)
                     : null;
             if (typed != null) {
                 return typed;
@@ -381,6 +382,99 @@ final class Responses {
             return b.bitLength() < 64 ? b.longValue() : null;
         }
         return null;
+    }
+
+    /**
+     * A knowledge reading, or a search's answer: collection a string and passages a list, each
+     * passage with n, pinned, item, chunk, byte_start and byte_end of their JSON types; every other
+     * field absent, null or of its type (collection_name a string, warnings a list of strings,
+     * truncated a boolean, the others objects).
+     */
+    static KnowledgeReading knowledgeReading(Map<String, Object> raw) {
+        Object collection = raw.get("collection");
+        List<Object> found = Json.asList(raw.get("passages"));
+        if (!(collection instanceof String) || found == null || !opt(raw, "collection_name", String.class)
+                || !opt(raw, "truncated", Boolean.class) || !opt(raw, "warnings", List.class)) {
+            return null;
+        }
+        for (String key : List.of("corpus", "query", "budget", "scope", "omitted", "search")) {
+            if (!opt(raw, key, Map.class)) {
+                return null;
+            }
+        }
+        List<KnowledgePassage> passages = new ArrayList<>(found.size());
+        for (Object o : found) {
+            KnowledgePassage p = knowledgePassage(Json.asMap(o));
+            if (p == null) {
+                return null;
+            }
+            passages.add(p);
+        }
+        Map<String, Object> corpus = Json.asMap(raw.get("corpus"));
+        Map<String, Object> query = Json.asMap(raw.get("query"));
+        Map<String, Object> budget = Json.asMap(raw.get("budget"));
+        Map<String, Object> scope = Json.asMap(raw.get("scope"));
+        Map<String, Object> search = Json.asMap(raw.get("search"));
+        List<String> warnings = new ArrayList<>();
+        List<Object> listed = Json.asList(raw.get("warnings"));
+        if (listed != null) {
+            for (Object w : listed) {
+                if (!(w instanceof String text)) {
+                    return null;
+                }
+                warnings.add(text);
+            }
+        }
+        Map<String, Object> omitted = Json.asMap(raw.get("omitted"));
+        return new KnowledgeReading((String) collection, str(raw.get("collection_name")),
+                corpus == null ? null : new KnowledgeReading.Corpus(integer(corpus.get("version"))),
+                query == null ? null : new KnowledgeReading.Query(str(query.get("source")), integer(query.get("tokens")),
+                        str(query.get("text"))),
+                budget == null ? null : new KnowledgeReading.Budget(str(budget.get("mode")), integer(budget.get("tokens")),
+                        str(budget.get("entry")), str(budget.get("cause"))),
+                scope == null ? null : new KnowledgeReading.Scope(str(scope.get("key")), str(scope.get("value"))),
+                Collections.unmodifiableList(warnings), Collections.unmodifiableList(passages),
+                omitted == null ? Map.of() : Collections.unmodifiableMap(omitted), integer(raw.get("pending_items")),
+                search == null ? null : new KnowledgeReading.Search(str(search.get("plan")), integer(search.get("candidates")),
+                        bool(search.get("fallback"))),
+                bool(raw.get("truncated")), raw);
+    }
+
+    /** One knowledge passage; null when a required field is missing or of another type. */
+    private static KnowledgePassage knowledgePassage(Map<String, Object> m) {
+        if (m == null) {
+            return null;
+        }
+        Long n = integer(m.get("n"));
+        Long chunk = integer(m.get("chunk"));
+        Long start = integer(m.get("byte_start"));
+        Long end = integer(m.get("byte_end"));
+        if (n == null || !(m.get("pinned") instanceof Boolean pinned) || !(m.get("item") instanceof String item) || chunk == null
+                || start == null || end == null) {
+            return null;
+        }
+        for (String key : List.of("reference", "title", "heading", "text")) {
+            if (!opt(m, key, String.class)) {
+                return null;
+            }
+        }
+        if ((m.get("score") != null && Json.asDouble(m.get("score")) == null) || (m.get("tokens") != null && integer(m.get("tokens")) == null)
+                || !opt(m, "lexical", Boolean.class) || !opt(m, "rendered", Boolean.class)) {
+            return null;
+        }
+        return new KnowledgePassage(n, pinned, item, chunk, start, end, str(m.get("reference")), str(m.get("title")),
+                str(m.get("heading")), integer(m.get("tokens")), Json.asDouble(m.get("score")), bool(m.get("lexical")),
+                bool(m.get("rendered")), str(m.get("text")), Collections.unmodifiableMap(m));
+    }
+
+    /** A field absent, null, or of this type. */
+    private static boolean opt(Map<String, Object> m, String key, Class<?> type) {
+        Object v = m.get(key);
+        return v == null || type.isInstance(v);
+    }
+
+    private static Boolean bool(Object v) {
+        return v instanceof Boolean b ? b : null;
     }
 
     /** An ocr reading: a string image and text (empty allowed), and truncated a boolean, all always sent. */

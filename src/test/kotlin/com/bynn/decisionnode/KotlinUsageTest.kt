@@ -114,9 +114,19 @@ class KotlinUsageTest {
             is FaceRecognitionReading -> "matches ${reading.matches().size}"
             is DepthReading -> "ahead ${reading.ahead()}"
             is SegmentReading -> "instances ${reading.instances().size}"
+            is KnowledgeReading -> "passages ${reading.passages().size}"
             is UnknownReading -> "unknown ${reading.booster()}"
         }
         assertEquals("age 27", text)
+    }
+
+    @Test
+    fun knowledgeReadsNaturallyFromKotlin() {
+        val booster = KnowledgeBooster.of("col_1").scope("M-42").topK(4).require(true).build()
+        assertEquals(mapOf("collection" to "col_1", "scope" to "M-42", "top_k" to 4), booster.options())
+        val options = DocumentOptions.builder().title("Claims policy").pinned(true).build()
+        assertEquals(mapOf("pinned" to true), options.fields())
+        assertEquals("# Receipts", Document.fromText("# Receipts").text())
     }
 
     @Test

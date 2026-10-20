@@ -11,6 +11,7 @@ import java.util.Map;
  * <pre>{@code
  * dn.collections().updateItem("col_...", "itm_...", ItemUpdate.builder().label("Front desk").build());
  * dn.collections().updateItem("col_...", "itm_...", ItemUpdate.builder().clearLabel().build());
+ * dn.collections().updateItem("col_...", "itm_...", ItemUpdate.builder().pinned(true).pinRank(1).build());
  * }</pre>
  */
 public final class ItemUpdate {
@@ -60,6 +61,27 @@ public final class ItemUpdate {
          */
         public Builder metadata(Map<String, ?> metadata) {
             fields.put("metadata", metadata);
+            return this;
+        }
+
+        /** A text item's pinned flag: true gives its passages to every decision that names the collection. */
+        public Builder pinned(boolean pinned) {
+            fields.put("pinned", pinned);
+            return this;
+        }
+
+        /** A text item's order among the pins, 0 to 1,000, lowest first. */
+        public Builder pinRank(int pinRank) {
+            fields.put("pin_rank", pinRank);
+            return this;
+        }
+
+        /**
+         * A text item's new title, 1 to 200 characters once trimmed. A new title makes a new version
+         * of the document (the API's 202); the other fields apply at once.
+         */
+        public Builder title(String title) {
+            fields.put("title", title);
             return this;
         }
 

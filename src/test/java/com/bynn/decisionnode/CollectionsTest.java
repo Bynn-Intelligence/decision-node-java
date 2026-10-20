@@ -146,8 +146,8 @@ class CollectionsTest {
     @Test
     void theLocalChecksAreTheApis422Entries() {
         ValidationError type = assertThrows(ValidationError.class, () -> collections().create("Staff", "person"));
-        assertEquals(Map.of("type", "literal_error", "loc", List.of("body", "type"), "msg", "Input should be 'face'",
-                "input", "person", "ctx", Map.of("expected", "'face'")), type.entries().get(0));
+        assertEquals(Map.of("type", "literal_error", "loc", List.of("body", "type"), "msg", "Input should be 'face' or 'text'",
+                "input", "person", "ctx", Map.of("expected", "'face' or 'text'")), type.entries().get(0));
         assertNull(type.status());
         assertEquals("string_too_short", entryType(() -> collections().create("")));
         assertEquals("string_too_long", entryType(() -> collections().create("x".repeat(81))));

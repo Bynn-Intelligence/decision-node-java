@@ -50,7 +50,7 @@ public final class DecisionNode {
     /** This SDK's version, sent in the {@code User-Agent} header. */
     public static final String VERSION = "0.3.2";
     /** The version of the DecisionNode SDK specification this SDK implements. */
-    public static final String SPEC_VERSION = "1.3";
+    public static final String SPEC_VERSION = "1.4";
 
     /** The most images one upload call takes: one presign holds 1 to 16 files. */
     static final int MAX_UPLOAD_FILES = 16;
@@ -72,6 +72,11 @@ public final class DecisionNode {
      * {@link #DEFAULT_TIMEOUT}: an image of 10 MB on a slow uplink needs more than an API call.
      */
     public static final Duration DEFAULT_UPLOAD_TIMEOUT = Duration.ofSeconds(60);
+    /**
+     * The time allowed for each storage {@code PUT} of a document upload, a file of up to 50 MB,
+     * unless the client's upload timeout is set.
+     */
+    public static final Duration DEFAULT_DOCUMENT_UPLOAD_TIMEOUT = Duration.ofSeconds(120);
     public static final int DEFAULT_MAX_RETRIES = 2;
     public static final int DEFAULT_CONCURRENCY = 8;
     /**
@@ -83,10 +88,11 @@ public final class DecisionNode {
     public static final int MAX_BODY_BYTES = 26_214_400;
 
     /** The {@code error_type}s that say an upload this client placed is no longer usable. */
-    private static final Set<String> STALE_UPLOAD = Set.of("upload_expired", "upload_consumed", "upload_not_found", "upload_incomplete");
+    static final Set<String> STALE_UPLOAD = Set.of("upload_expired", "upload_consumed", "upload_not_found", "upload_incomplete");
 
     private final String model;
     private final long inlineThreshold;
+    private final Duration documentUploadTimeout;
     private final Transport transport;
     private final Uploads uploads;
     private final Batches batches;
@@ -125,6 +131,7 @@ public final class DecisionNode {
             throw new IllegalArgumentException("maxRetries must be 0 or more, got " + maxRetries);
         }
         this.inlineThreshold = b.inlineThreshold == null ? DEFAULT_INLINE_THRESHOLD : b.inlineThreshold;
+        this.documentUploadTimeout = b.uploadTimeout == null ? DEFAULT_DOCUMENT_UPLOAD_TIMEOUT : b.uploadTimeout;
         Map<String, String> headers = Collections.unmodifiableMap(new LinkedHashMap<>(b.headers));
         boolean https = baseUrl.regionMatches(true, 0, "https:", 0, 6);
         HttpClient http;
@@ -227,6 +234,11 @@ public final class DecisionNode {
 
     Uploads uploads() {
         return uploads;
+    }
+
+    /** Each document upload's {@code PUT} timeout: the client's upload timeout, else 120 seconds. */
+    Duration documentUploadTimeout() {
+        return documentUploadTimeout;
     }
 
     // ------------------------------------------------------------------ decide
@@ -1034,6 +1046,40 @@ public final class DecisionNode {
         });
     }
 
+    /**
+     * Uploads 1 to 16 documents for a knowledge base ahead of time, whatever their type and size,
+     * and returns one upload id each, in order, for a later {@link Document#fromUpload(String)}. A
+     * text document is uploaded as {@code text/markdown}, or {@code text/plain} for the format
+     * {@code text}. An upload not named by an item within its hour expires. Needs a full-scope
+     * key.
+     *
+     * @throws BadRequestError for a file over 50 MB, an empty one, or one of another type, before
+     *     anything is sent
+     */
+    public List<String> uploadDocuments(List<Document> documents) {
+        return Transport.await(uploadDocumentsAsync(documents));
+    }
+
+    public CompletableFuture<List<String>> uploadDocumentsAsync(List<Document> documents) {
+        List<Document.File> files = new ArrayList<>();
+        try {
+            Objects.requireNonNull(documents, "documents");
+            if (documents.isEmpty() || documents.size() > MAX_UPLOAD_FILES) {
+                throw LocalChecks.usage("files: 1 to " + MAX_UPLOAD_FILES + " files, got " + documents.size() + ".", null);
+            }
+            for (int i = 0; i < documents.size(); i++) {
+                Document d = Objects.requireNonNull(documents.get(i), "documents[" + i + "]");
+                if (d.isUpload()) {
+                    throw new IllegalArgumentException("documents[" + i + "] is an upload already; give its text or its file");
+                }
+                files.add(d.isText() ? d.textFile(i) : d.file(i));
+            }
+        } catch (RuntimeException e) {
+            return CompletableFuture.failedFuture(e);
+        }
+        return uploads.uploadDocuments(files, documentUploadTimeout).thenApply(Collections::unmodifiableList);
+    }
+
     // ------------------------------------------------------------------ sessions
 
     /** Opens a session. See {@link #openSession(SessionRequest)}. */
@@ -1353,8 +1399,9 @@ public final class DecisionNode {
         }
 
         /**
-         * The time allowed for each storage {@code PUT} attempt of an image upload, until the
-         * storage answers. Default: 60 seconds, apart from {@link #timeout(Duration)}. A
+         * The time allowed for each storage {@code PUT} attempt of an upload, until the storage
+         * answers. Default: 60 seconds for an image and 120 seconds for a document, apart from
+         * {@link #timeout(Duration)}; set here, it is used for both. A
          * {@code PUT} that outlives it is retried as a timeout, then raises {@link TimeoutError}.
          *
          * @throws IllegalArgumentException when it is not above 0

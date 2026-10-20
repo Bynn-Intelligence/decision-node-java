@@ -70,6 +70,11 @@ final class Transport {
 
     /** The default per-attempt timeout of a decision naming {@code ocr}, when the caller set none. */
     static final Duration OCR_TIMEOUT = Duration.ofSeconds(30);
+    /**
+     * The default per-attempt timeout of a document's add or replace with {@code ?wait=true}, when
+     * the caller set none: the server holds such a call up to 10 seconds.
+     */
+    static final Duration WAIT_TIMEOUT = Duration.ofSeconds(20);
 
     final String apiKey;
     final String baseUrl;
@@ -143,7 +148,20 @@ final class Transport {
 
     /** {@link #idempotent(String, String, byte[])} under the caller's own key. */
     CompletableFuture<Response> idempotent(String method, String path, byte[] body, String key) {
-        return call(method, path, body, "application/json", Policy.IDEMPOTENT, timeout, key);
+        return idempotent(method, path, body, key, timeout);
+    }
+
+    /** {@link #idempotent(String, String, byte[], String)} with each attempt within {@code limit}. */
+    CompletableFuture<Response> idempotent(String method, String path, byte[] body, String key, Duration limit) {
+        return call(method, path, body, "application/json", Policy.IDEMPOTENT, limit, key);
+    }
+
+    /**
+     * The per-attempt timeout of a document call that asks the server to wait until it is ready
+     * ({@code ?wait=true}): {@link #WAIT_TIMEOUT} unless the caller set a timeout.
+     */
+    Duration waitTimeout() {
+        return timeoutSet ? timeout : WAIT_TIMEOUT;
     }
 
     private CompletableFuture<Response> call(String method, String path, byte[] body, String contentType, Policy policy,
@@ -288,6 +306,10 @@ final class Transport {
     private static boolean retryable(Policy policy, int status, DecisionNodeError err) {
         if (status == 529 && "enrollment_unpriced".equals(err.details().get("reason"))) {
             // No price for an enrollment: a retry never cures it.
+            return false;
+        }
+        if (status == 529 && "ingestion_delayed".equals(err.details().get("reason"))) {
+            // Ingestion is delayed (an outage of it): the caller decides whether to wait.
             return false;
         }
         if (status == 429 && "key_spend_cap_reached".equals(err.errorType())) {

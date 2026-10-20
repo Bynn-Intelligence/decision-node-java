@@ -899,15 +899,109 @@ final class LocalChecks {
 
     /** A collection's create: type {@code face}, name 1 to 80 characters (the API's 422 entries). */
     static void collectionCreate(Object type, Object name) {
+        collectionCreate(type, name, null);
+    }
+
+    static final Pattern SCOPE_KEY = Pattern.compile("[a-z0-9_]{1,40}");
+
+    /**
+     * A collection's create: type {@code face} or {@code text}, name 1 to 80 characters and, when
+     * given, a scope key of 1 to 40 of {@code a-z 0-9 _} (the API's 422 entries).
+     */
+    static void collectionCreate(Object type, Object name, Object scopeKey) {
         List<Map<String, Object>> entries = new ArrayList<>();
-        if (!"face".equals(type)) {
-            entries.add(entry("literal_error", List.of("body", "type"), "Input should be 'face'", echoed(type),
-                    Map.of("expected", "'face'")));
+        if (!"face".equals(type) && !"text".equals(type)) {
+            entries.add(entry("literal_error", List.of("body", "type"), "Input should be 'face' or 'text'", echoed(type),
+                    Map.of("expected", "'face' or 'text'")));
         }
         entries.addAll(stringEntries(List.of("body", "name"), name, COLLECTION_NAME_MAX, null));
+        if (scopeKey != null && !(scopeKey instanceof String key && SCOPE_KEY.matcher(key).matches())) {
+            entries.add(entry("string_pattern_mismatch", List.of("body", "scope_key"), "String should match pattern '^[a-z0-9_]{1,40}$'",
+                    echoed(scopeKey), null));
+        }
         if (!entries.isEmpty()) {
             throw invalid(entries);
         }
+    }
+
+    static final int TITLE_MAX = 200;
+    static final int PIN_RANK_MAX = 1000;
+
+    /** A document's title entry: 1 to 200 characters (code points) once trimmed; empty when it is one. */
+    private static List<Map<String, Object>> titleEntries(Object title) {
+        if (title instanceof String t) {
+            String trimmed = t.strip();
+            int n = trimmed.codePointCount(0, trimmed.length());
+            if (n >= 1 && n <= TITLE_MAX) {
+                return List.of();
+            }
+        }
+        return List.of(entry("string_too_long", List.of("body", "title"), "A title is 1 to 200 characters", echoed(title), null));
+    }
+
+    /** A pin rank's entry: an integer from 0 to 1,000; empty when it is one. */
+    private static List<Map<String, Object>> pinRankEntries(Object v) {
+        Long n = v instanceof Integer || v instanceof Long || v instanceof Short ? ((Number) v).longValue() : null;
+        if (n != null && n >= 0 && n <= PIN_RANK_MAX) {
+            return List.of();
+        }
+        return List.of(entry("int_range", List.of("body", "pin_rank"), "Input should be an integer from 0 to 1000", echoed(v), null));
+    }
+
+    /**
+     * A text document's entries, as the API's text route judges its body: the title (missing, or
+     * not 1 to 200 characters), the text (empty) and the format.
+     */
+    static List<Map<String, Object>> documentEntries(boolean titleRequired, Object title, String text, Object format) {
+        List<Map<String, Object>> entries = new ArrayList<>();
+        if (title != null) {
+            entries.addAll(titleEntries(title));
+        } else if (titleRequired) {
+            entries.add(entry("missing", List.of("body", "title"), "Field required", null, null));
+        }
+        if (text != null && text.isEmpty()) {
+            entries.add(entry("string_too_short", List.of("body", "text"), "The text is empty", "", null));
+        }
+        if (format != null && !"markdown".equals(format) && !"text".equals(format)) {
+            entries.add(entry("literal_error", List.of("body", "format"), "Input should be 'markdown' or 'text'", echoed(format), null));
+        }
+        return entries;
+    }
+
+    /** A text item's reference, pin rank, label and metadata, with the text route's words. */
+    static List<Map<String, Object>> textFieldEntries(Map<String, Object> f) {
+        List<Map<String, Object>> entries = new ArrayList<>();
+        if (f.containsKey("reference")) {
+            Object r = f.get("reference");
+            if (!(r instanceof String ref && Pattern.compile(ITEM_REFERENCE_PATTERN).matcher(ref).matches())) {
+                entries.add(entry("string_pattern_mismatch", List.of("body", "reference"),
+                        "String should match pattern '" + ITEM_REFERENCE_PATTERN + "'", echoed(r), null));
+            }
+        }
+        if (f.containsKey("pin_rank")) {
+            entries.addAll(pinRankEntries(f.get("pin_rank")));
+        }
+        if (f.get("label") != null) {
+            Object l = f.get("label");
+            if (!(l instanceof String label) || label.isEmpty() || label.codePointCount(0, label.length()) > ITEM_LABEL_MAX
+                    || hasControl(label)) {
+                entries.add(entry("string_too_long", List.of("body", "label"),
+                        "A label is 1 to 128 characters with no control or invisible characters", echoed(l), null));
+            }
+        }
+        if (f.containsKey("metadata")) {
+            entries.addAll(metadataEntries(f.get("metadata")));
+        }
+        return entries;
+    }
+
+    /** A control or invisible character: Unicode categories Cc, Cf, Zl and Zp. */
+    private static boolean hasControl(String s) {
+        return s.codePoints().anyMatch(c -> {
+            int t = Character.getType(c);
+            return t == Character.CONTROL || t == Character.FORMAT || t == Character.LINE_SEPARATOR
+                    || t == Character.PARAGRAPH_SEPARATOR;
+        });
     }
 
     /**
@@ -943,17 +1037,41 @@ final class LocalChecks {
      */
     static void collectionUpdate(boolean hasReference, Object reference, boolean hasLabel, Object label, boolean hasMetadata,
             Object metadata) {
-        List<Map<String, Object>> entries = new ArrayList<>();
+        Map<String, Object> f = new LinkedHashMap<>();
         if (hasReference) {
-            entries.addAll(stringEntries(List.of("body", "reference"), reference, ITEM_REFERENCE_MAX, ITEM_REFERENCE_PATTERN));
+            f.put("reference", reference);
         }
-        if (hasLabel && label != null) {
-            entries.addAll(stringEntries(List.of("body", "label"), label, ITEM_LABEL_MAX, null));
+        if (hasLabel) {
+            f.put("label", label);
         }
         if (hasMetadata) {
-            entries.addAll(metadataEntries(metadata));
+            f.put("metadata", metadata);
         }
-        if (!hasReference && !hasLabel && !hasMetadata) {
+        collectionUpdate(f);
+    }
+
+    /**
+     * An item's update, the fields given: reference, label and metadata as an enrollment checks
+     * them, a text item's pin rank and title as the text route does; at least one must be given.
+     */
+    static void collectionUpdate(Map<String, Object> f) {
+        List<Map<String, Object>> entries = new ArrayList<>();
+        if (f.containsKey("reference")) {
+            entries.addAll(stringEntries(List.of("body", "reference"), f.get("reference"), ITEM_REFERENCE_MAX, ITEM_REFERENCE_PATTERN));
+        }
+        if (f.containsKey("pin_rank")) {
+            entries.addAll(pinRankEntries(f.get("pin_rank")));
+        }
+        if (f.get("label") != null) {
+            entries.addAll(stringEntries(List.of("body", "label"), f.get("label"), ITEM_LABEL_MAX, null));
+        }
+        if (f.containsKey("metadata")) {
+            entries.addAll(metadataEntries(f.get("metadata")));
+        }
+        if (f.containsKey("title")) {
+            entries.addAll(titleEntries(f.get("title")));
+        }
+        if (f.isEmpty()) {
             entries.add(entry("missing", List.of("body"), "Send reference, label, metadata or any of them", null, null));
         }
         if (!entries.isEmpty()) {

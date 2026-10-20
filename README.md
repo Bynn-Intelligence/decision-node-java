@@ -5,10 +5,11 @@
 The official Java and Kotlin client for the [DecisionNode](https://decisionnode.com) API: ask
 typed questions about any state and get probabilities back.
 
-Java 17 or later. Works from Kotlin as is. Implements version 1.3 of the DecisionNode SDK
+Java 17 or later. Works from Kotlin as is. Implements version 1.4 of the DecisionNode SDK
 specification, which `DecisionNode.SPEC_VERSION` holds: decisions with `truth`, `choice`, `score`,
 `number`, `point` and `box` questions, up to 16 images and videos sent as frames, boosters and
-their evidence, fine-tuned models, the models list, image uploads, sessions and the Batch API.
+their evidence, knowledge bases of your own documents, fine-tuned models, the models list, image
+uploads, sessions and the Batch API.
 
 ## Install
 
@@ -350,6 +351,7 @@ exactly as before. These boosters are available:
 | `face_recognition` | A picture of a person | Whether a face matches an item of the collection the request names: one of your own collections, or `celebrities`, open to every workspace, where a match gives the person's name. Per match a box, a score and the item's reference, with its name or label | `collection` (required: your own collection's id, or `celebrities`); `threshold` (0 to 1, default 0.5: matches below it are not sent) |
 | `ocr` | Any picture | The text it shows, all of it by default, or what a `prompt` asks for: a formula in LaTeX, a table in HTML or Markdown, the fields of a JSON schema the prompt gives | `prompt` (at most 2,000 characters; left out, all the text, plain) |
 | `bynn_depth` | Any picture | Depth Vision: distance in meters to the nearest obstacle straight ahead (the floor left out), seven directions from left to right, and a grid of up to 16 by 16 cells | `grid_size` (2 to 16, default 8) |
+| `knowledge` | The request's state and questions, never a picture | The passages of your own documents that apply, from one of your knowledge bases: pinned rules always, then the best-matching passages within a token budget, as facts and rules to apply (see Knowledge) | `collection` (required); `query`, `scope`, `match`, `filter`, `top_k`, `max_tokens`, `pinned`, `min_score`, `include_text` |
 | `bynn_segment` | Any picture | Segment Vision: what you name in words, each match's outline, box and centre and, with depth on, its distance and size in meters | `prompt` (required: one phrase, or a list of 1 to 4, each at most 120 characters); `max_instances` (1 to 16, default 8); `min_score` (0 to 1, default 0.25); `polygon_points` (3 to 64, default 24); `depth` (default true) |
 
 Options go in `Booster.of(name).options(map)`, and the API checks them: a bad value or an unknown
@@ -456,6 +458,155 @@ DecideRequest.builder()
   error of a request that named boosters carries `boosters()`: each booster's `status()` and
   `latencyMs()` by name, from the `x-decisionnode-boosters` header, so you can see which required
   booster failed.
+
+## Knowledge
+
+A knowledge base is a collection of type `text` holding your own documents: policies, manuals,
+mission briefs. The `knowledge` booster gives a decision the passages of them that apply, as facts
+and rules to apply, and cites each one.
+
+### Create a knowledge base and add documents
+
+```java
+CollectionsClient kb = dn.collections();
+Map<String, Object> policies = kb.create("Claims policy", "text", "mission"); // scope key optional
+String col = (String) policies.get("id");
+
+// Markdown held in memory goes inline, in one call.
+Map<String, Object> rule = kb.addDocument(col, Document.fromText("""
+        # Receipts
+        Reject any claim over 500 SEK without a receipt.
+        """),
+    DocumentOptions.builder().title("Receipts rule").pinned(true).build());
+
+// A PDF from a path is uploaded, then converted to text.
+Map<String, Object> manual = kb.addDocument(col, Document.fromPath(Path.of("claims-manual.pdf")),
+    DocumentOptions.builder().reference("manual-2026").build());
+
+// A mission's brief, scoped by the collection's scope key in its metadata.
+kb.addDocument(col, Document.fromText(brief),
+    DocumentOptions.builder().title("Mission M-42 brief").metadata(Map.of("mission", "M-42")).build());
+
+Map<String, Object> ready = kb.waitUntilReady(col, (String) manual.get("id"));
+ready.get("status");                                   // "ready", or "failed" with its "error"
+```
+
+- A document is text (`Document.fromText(text)` for Markdown, the default, or
+  `Document.fromText(text, "text")` for plain text), a file (`Document.fromPath`,
+  `Document.fromBytes` or `Document.fromStream`, each with an optional content type and file
+  name), or a knowledge upload made before (`Document.fromUpload("upl_...")`, from
+  `dn.uploadDocuments(documents)`).
+- Text, and a text or Markdown file under the client's inline threshold, goes inline in the one
+  call. Any other file is uploaded first (a full-scope key) and named by its upload id. A file is
+  converted to text; once the document is ready only its text is kept, and the original file is
+  deleted.
+- Ingestion is asynchronous: an added document is `queued`, then `processing` (`stage`
+  `extracting` for a converted file, `chunking`, `embedding`), then `ready` or `failed`.
+  `waitUntilReady(true)` in `DocumentOptions` asks the server to answer once the document is
+  ready (it waits up to 10 seconds, so the call has 20 seconds per attempt unless you set a
+  timeout). `kb.waitUntilReady(col, itemId)` reads the document until it is `ready` or `failed`
+  and returns it; a failed document is returned, not raised, its `error` saying why.
+  `kb.waitUntilReady(col)` waits until nothing in the knowledge base is queued or processing.
+  Both read at once, then after 1 second, 1.5 times longer each time up to 10 seconds, and raise
+  `TimeoutError` 300 seconds after the call; `waitUntilReady(col, itemId, timeout, pollInterval)` changes
+  both.
+- `replaceDocument(col, itemId, document, options)` replaces a document whole as a new version;
+  the old one serves until the new one is ready. `updateItem` changes `reference`, `label`,
+  `metadata`, `pinned` and `pinRank` at once, never embedded again or billed; a new `title` makes
+  a new version.
+- `getItem(col, itemId, true)` returns the document with its stored `text`, `listChunks` its
+  chunks page by page, `listItems` the documents, `deleteItem` one, `deleteFailedItems(col)` every
+  failed document at once (`{"deleted": n}`), and `delete` the knowledge base
+  (`{"id", "deleted": true}`, or `{"id", "status": "purging"}` while it is purged). A failed
+  document stays listed with its `error` until you delete it, and counts toward nothing.
+- `addDocument`, `replaceDocument` and `updateItem` carry an `Idempotency-Key`, the same on every
+  attempt, so a retried call never adds a document twice.
+
+### Pins and scopes
+
+A rule that must always apply is pinned (`pinned(true)`, ordered by `pinRank`): every decision
+that names the knowledge base gets it. A knowledge base created with a scope key (here `mission`)
+holds global documents and scoped ones, those whose metadata gives the key a value; a decision or a
+search names the value in `scope` and reads the global documents and that scope's.
+
+### A decision with knowledge
+
+```java
+Decision d = dn.decide(DecideRequest.builder()
+    .state(Map.of("claim", Map.of("amount", "740.00", "receipt", false), "mission", "M-42"))
+    .booster(KnowledgeBooster.of(col).scope("M-42").require(true).build())
+    .question("approve", truth("Should the claim be approved under our policy?"))
+    .build());
+
+KnowledgeReading k = (KnowledgeReading) d.evidence("knowledge").results().get(0);
+for (KnowledgePassage p : k.passages()) {
+    System.out.println(p.n() + (p.pinned() ? " (pinned) " : " ") + p.title() + " > " + p.heading()
+        + ", item " + p.item() + " chunk " + p.chunk() + " bytes " + p.byteStart() + "-" + p.byteEnd());
+}
+
+// The cited text: byteStart and byteEnd are UTF-8 byte offsets, end exclusive.
+String stored = (String) dn.collections().getItem(col, k.passages().get(0).item(), true).get("text");
+byte[] utf8 = stored.getBytes(StandardCharsets.UTF_8);
+String cited = new String(utf8, (int) k.passages().get(0).byteStart(),
+    (int) (k.passages().get(0).byteEnd() - k.passages().get(0).byteStart()), StandardCharsets.UTF_8);
+```
+
+- `Booster.knowledge(col)` is the booster with its collection alone; `KnowledgeBooster.of(col)`
+  sets `query` (in place of the one built from the questions and the state), `scope`, `match`
+  (metadata equality), `filter` (a filter tree), `topK` (0 to 20; 0 is the pins alone),
+  `maxTokens` (`"auto"` or 128 to 8,192), `pinned(false)`, `minScore`, `includeText(true)` (each
+  passage's text in the reading; a full-scope key) and `require(true)`. The options are sent as
+  given and checked by the API.
+- The reading is a `KnowledgeReading`: `collection`, `collectionName`, `corpus`, `query`,
+  `budget`, `scope`, `warnings` (`scope_not_named`, `over_budget`, `budget_floor`,
+  `pinned_filtered`), `passages` (each a `KnowledgePassage`: `n`, `pinned`, `item`, `reference`,
+  `title`, `heading`, `chunk`, `byteStart`, `byteEnd`, `tokens`, `score`, null for a pin,
+  `lexical`, `rendered`, and `text` with `includeText`), `omitted`, `pendingItems`, `search` and
+  `truncated`. A reading of another shape is an `UnknownReading`.
+- The byte offsets are UTF-8 byte offsets into the document's stored text, which
+  `getItem(col, itemId, true)` returns. A Java string counts UTF-16 units, so encode the text to
+  UTF-8 before slicing it by them.
+- `require(true)` guarantees the retrieval ran over a ready knowledge base and that every pin in
+  scope was given to the model.
+
+### Search
+
+```java
+KnowledgeReading r = dn.collections().search(col, "Do claims over 500 SEK need a receipt?",
+    SearchOptions.builder().scope("M-42").topK(5).build());
+r.passages().forEach(p -> System.out.println(p.score() + " " + p.text()));
+```
+
+`search` tries a query without a decision and returns the passages a decision would get, each
+with its text. It needs a full-scope key and is billed as one knowledge call.
+
+### Errors you may meet
+
+- `require(true)` on a knowledge base with nothing ready and nothing being added (no documents,
+  or all failed): the base `DecisionNodeError` with status 409 and `errorType()`
+  `knowledge_collection_empty`, its `details()` holding `items` and `failed`.
+- `require(true)` while no document is ready yet but some are being added: `OverloadedError`
+  (`booster_unavailable`), retried after its `Retry-After` of 5 seconds. When ingestion is
+  delayed, `details().get("reason")` is `ingestion_delayed`, `Retry-After` is 60 seconds, and the
+  error is raised at once so you decide whether to wait.
+- Adding documents faster than ingestion takes them: `RateLimitError`, `details().get("reason")`
+  `ingest_queue_full` or `ingest_tokens_per_hour`, retried after its `Retry-After`.
+- A text over 512 KiB once normalised: `RequestTooLargeError`, `errorType()` `item_too_large`.
+- A title, scope key, reference, label, metadata or pin rank the API would refuse is its
+  `ValidationError`, and a file that is empty, over 50 MB or not one of the types below its
+  `BadRequestError`, raised before anything is sent.
+
+### File types and limits
+
+Text (`.txt`), Markdown (`.md`, `.markdown`), PDF, Word (`.docx`), PowerPoint (`.pptx`), Excel
+(`.xlsx`), HTML (`.html`, `.htm`) and images (PNG, JPEG, TIFF, WebP). A file's type comes from the
+content type you give, else from its name's extension, else from its first bytes; a `.docx`,
+`.pptx`, `.xlsx` or text file given as bytes or a stream needs a content type or a file name. At
+most 50 MB a file, 100 pages a PDF, and 512 KiB of text after extraction.
+
+Billing: a decision naming `knowledge` is billed one knowledge call (USD 0.001) whatever it
+retrieves, and so is a search; ingestion and storage are priced per token and per chunk. See
+[the pricing page](https://decisionnode.com/docs/pricing#boosters).
 
 ## Fine-tuned models
 
@@ -797,7 +948,11 @@ certificate or hostname checks (see Your own HttpClient). These are never wrappe
   never retried on `session_limit_exceeded`; see their sections.
 - Batch results are read as they stream: the timeout covers the wait for the response to begin,
   then each wait for more data while you read.
-- An image upload's storage `PUT` has its own timeout, `uploadTimeout` (60 s by default).
+- An upload's storage `PUT` has its own timeout, `uploadTimeout` (60 s for an image and 120 s for
+  a document by default).
+- A document's add or replace with `waitUntilReady(true)` waits 20 seconds per attempt when you
+  set no timeout, since the server holds it up to 10 seconds.
+- A knowledge 529 whose `details().get("reason")` is `ingestion_delayed` is never retried.
 - Redirects are never followed, so the API key is never sent to another URL or over plain
   HTTP. A 3xx is a `DecisionNodeError` with its status. An `HttpClient` passed to the builder
   must not follow redirects either; see below.
@@ -812,7 +967,7 @@ DecisionNode dn = DecisionNode.builder()
     .timeout(Duration.ofSeconds(10))           // per attempt, above 0
     .maxRetries(2)                             // 0 or more
     .inlineThreshold(524_288)                  // bytes; local images under it go inline
-    .uploadTimeout(Duration.ofSeconds(60))     // per storage PUT of an image upload, above 0
+    .uploadTimeout(Duration.ofSeconds(60))     // per storage PUT of an upload, above 0
     .header("x-decisionnode-safety-body", "true")
     .httpClient(HttpClient.newHttpClient())    // a proxy, an executor, TLS settings; see below
     .build();

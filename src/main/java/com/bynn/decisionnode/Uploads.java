@@ -267,6 +267,8 @@ final class Uploads {
 
     private CompletableFuture<List<String>> presignAndPut(List<Map.Entry<Key, Image>> files) {
         List<Map<String, Object>> body = new ArrayList<>();
+        List<byte[]> data = new ArrayList<>();
+        List<Key> keys = new ArrayList<>();
         for (Map.Entry<Key, Image> e : files) {
             Image img = e.getValue();
             Map<String, Object> f = new LinkedHashMap<>();
@@ -275,22 +277,52 @@ final class Uploads {
             f.put("checksum", Base64.getEncoder().encodeToString(Image.digest("MD5", img.bytes())));
             f.put("sha256", e.getKey().sha256());
             body.add(f);
+            data.add(img.bytes());
+            keys.add(e.getKey());
         }
+        return presignAndPut(body, data, putTimeout, keys);
+    }
+
+    /**
+     * Uploads document files with the knowledge purpose, whatever their size: one presign for all
+     * of them, then one {@code PUT} each, in parallel, each within {@code timeout}. Nothing is
+     * cached: a knowledge upload is consumed by the item it makes.
+     */
+    CompletableFuture<List<String>> uploadDocuments(List<Document.File> files, java.time.Duration timeout) {
+        List<Map<String, Object>> body = new ArrayList<>();
+        List<byte[]> data = new ArrayList<>();
+        for (Document.File file : files) {
+            Map<String, Object> f = new LinkedHashMap<>();
+            f.put("purpose", "knowledge");
+            f.put("content_type", file.contentType());
+            f.put("byte_size", file.bytes().length);
+            f.put("checksum", Base64.getEncoder().encodeToString(Image.digest("MD5", file.bytes())));
+            f.put("sha256", Base64.getEncoder().encodeToString(Image.digest("SHA-256", file.bytes())));
+            if (file.filename() != null) {
+                f.put("filename", file.filename());
+            }
+            body.add(f);
+            data.add(file.bytes());
+        }
+        return presignAndPut(body, data, timeout, null);
+    }
+
+    /** One presign for these files, then their {@code PUT}s; {@code keys} null caches nothing. */
+    private CompletableFuture<List<String>> presignAndPut(List<Map<String, Object>> body, List<byte[]> data,
+            java.time.Duration timeout, List<Key> keys) {
         byte[] payload = Json.write(Map.of("files", body));
         return transport.json("POST", "/v1/uploads", payload, Transport.Policy.DEFAULT).thenCompose(r -> {
             // The URLs live expires_in seconds (300) from when the presign answered, by the client's clock.
             long urlsExpire = urlsExpire(r);
             List<Object> uploads = Json.asList(r.object().get("uploads"));
-            if (uploads == null || uploads.size() != files.size()) {
+            if (uploads == null || uploads.size() != body.size()) {
                 throw Responses.malformedAnswer(r.status(), r.headers(), r.object(),
                         "the upload response does not hold one upload per file");
             }
             List<CompletableFuture<String>> puts = new ArrayList<>();
-            for (int i = 0; i < files.size(); i++) {
+            for (int i = 0; i < body.size(); i++) {
                 Map<String, Object> up = Json.asMap(uploads.get(i));
-                Map.Entry<Key, Image> file = files.get(i);
-                Map<String, Object> fileBody = body.get(i);
-                puts.add(putOrPresignAgain(up, file, fileBody, urlsExpire));
+                puts.add(putOrPresignAgain(up, data.get(i), body.get(i), urlsExpire, timeout, keys == null ? null : keys.get(i)));
             }
             return CompletableFuture.allOf(puts.toArray(new CompletableFuture<?>[0])).thenApply(v -> {
                 List<String> ids = new ArrayList<>();
@@ -304,18 +336,17 @@ final class Uploads {
 
     /**
      * One {@code PUT}; a 403 once the presigned URL's 5 minutes have passed is presigned again,
-     * once. Then the upload id goes in the cache until its {@code expires_at}.
+     * once. Then an image's upload id goes in the cache until its {@code expires_at}.
      */
-    private CompletableFuture<String> putOrPresignAgain(Map<String, Object> up, Map.Entry<Key, Image> file,
-            Map<String, Object> fileBody, long urlsExpire) {
+    private CompletableFuture<String> putOrPresignAgain(Map<String, Object> up, byte[] data, Map<String, Object> fileBody,
+            long urlsExpire, java.time.Duration timeout, Key key) {
         if (up == null || !(up.get("upload_id") instanceof String) || !(up.get("url") instanceof String)) {
             return CompletableFuture.failedFuture(new ServerError(new ErrorInfo(201, null,
                     "the upload response has an entry without upload_id or url", null, null, up, Map.of())));
         }
-        Image img = file.getValue();
-        return put(up, img.bytes()).handle((v, err) -> {
+        return put(up, data, timeout).handle((v, err) -> {
             if (err == null) {
-                return CompletableFuture.completedFuture(done(up, file.getKey()));
+                return CompletableFuture.completedFuture(done(up, key));
             }
             Throwable cause = Transport.unwrap(err);
             if (cause instanceof DecisionNodeError && Integer.valueOf(403).equals(((DecisionNodeError) cause).status())
@@ -328,7 +359,7 @@ final class Uploads {
                         throw Responses.malformedAnswer(r.status(), r.headers(), r.object(),
                                 "the upload response does not hold one upload per file");
                     }
-                    return put(next, img.bytes()).thenApply(x -> done(next, file.getKey()));
+                    return put(next, data, timeout).thenApply(x -> done(next, key));
                 });
             }
             return CompletableFuture.<String>failedFuture(cause);
@@ -343,7 +374,7 @@ final class Uploads {
     private String done(Map<String, Object> up, Key key) {
         String id = (String) up.get("upload_id");
         Long expires = parseTime(Responses.str(up.get("expires_at")));
-        if (expires != null) {
+        if (key != null && expires != null) {
             remember(key, id, expires);
         }
         return id;
@@ -370,6 +401,11 @@ final class Uploads {
      * 412 on a retry means an earlier attempt stored the object.
      */
     CompletableFuture<Void> put(Map<String, Object> up, byte[] data) {
+        return put(up, data, putTimeout);
+    }
+
+    /** {@link #put(Map, byte[])} with its own timeout for each attempt. */
+    CompletableFuture<Void> put(Map<String, Object> up, byte[] data, java.time.Duration timeout) {
         URI uri;
         try {
             uri = URI.create((String) up.get("url"));
@@ -383,7 +419,7 @@ final class Uploads {
                     "the storage URL must be https; nothing was sent to " + uri.getScheme() + "://" + uri.getHost()));
         }
         // The storage PUT has its own timeout, apart from the API attempt's.
-        HttpRequest.Builder rb = HttpRequest.newBuilder(uri).timeout(putTimeout);
+        HttpRequest.Builder rb = HttpRequest.newBuilder(uri).timeout(timeout);
         if (!https) {
             rb.version(HttpClient.Version.HTTP_1_1);
         }

@@ -52,6 +52,14 @@ public final class Booster {
         return new Booster(Objects.requireNonNull(name, "name"), null, null, null);
     }
 
+    /**
+     * The {@code knowledge} booster over this knowledge base (a {@code col_} id), with no other
+     * option. {@link KnowledgeBooster} sets its options and {@code require}.
+     */
+    public static Booster knowledge(String collection) {
+        return KnowledgeBooster.of(collection).build();
+    }
+
     /** The ids of the request's images it reads. Not given: every image of the request. */
     public Booster images(String... ids) {
         return images(Arrays.asList(ids));
