@@ -515,7 +515,7 @@ ready.get("status");                                   // "ready", or "failed" w
   `metadata`, `pinned` and `pinRank` at once, never embedded again or billed; a new `title` makes
   a new version.
 - `getItem(col, itemId, true)` returns the document with its stored `text`, `listChunks` its
-  chunks page by page, `listItems` the documents, `deleteItem` one, `deleteFailedItems(col)` every
+  chunks page by page, `listItems` the documents, `deleteItem` one, `deleteFailed(col)` every
   failed document at once (`{"deleted": n}`), and `delete` the knowledge base
   (`{"id", "deleted": true}`, or `{"id", "status": "purging"}` while it is purged). A failed
   document stays listed with its `error` until you delete it, and counts toward nothing.

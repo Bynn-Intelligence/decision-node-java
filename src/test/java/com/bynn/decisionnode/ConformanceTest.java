@@ -1919,9 +1919,9 @@ class ConformanceTest {
                 return async ? join(client.collections().waitUntilReadyAsync(id, item, timeout, interval))
                         : client.collections().waitUntilReady(id, item, timeout, interval);
             }
-            case "collections.delete_failed_items":
-                return async ? join(client.collections().deleteFailedItemsAsync((String) args.get("collection_id")))
-                        : client.collections().deleteFailedItems((String) args.get("collection_id"));
+            case "collections.delete_failed":
+                return async ? join(client.collections().deleteFailedAsync((String) args.get("collection_id")))
+                        : client.collections().deleteFailed((String) args.get("collection_id"));
             case "upload_documents": {
                 List<Document> docs = new ArrayList<>();
                 for (Object o : list(args.get("documents"))) {

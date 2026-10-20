@@ -394,9 +394,9 @@ class KnowledgeTest {
     // ------------------------------------------------------------------ reads
 
     @Test
-    void deleteFailedItemsDeletesEveryFailedDocument() {
+    void deleteFailedDeletesEveryFailedDocument() {
         reply = s -> new Reply(200, "{\"deleted\":3}");
-        assertEquals(Map.of("deleted", 3), collections().deleteFailedItems("col_1"));
+        assertEquals(Map.of("deleted", 3), collections().deleteFailed("col_1"));
         assertEquals("DELETE", seen.peek().method());
         assertEquals("/v1/collections/col_1/items?status=failed", seen.peek().path());
         assertNull(seen.peek().key());

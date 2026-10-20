@@ -653,11 +653,11 @@ public final class CollectionsClient {
      * knowledge base at once and returns the API's answer as sent, {@code {"deleted": n}}. Running
      * it again deletes nothing more, so it retries as any call.
      */
-    public Map<String, Object> deleteFailedItems(String collectionId) {
-        return Transport.await(deleteFailedItemsAsync(collectionId));
+    public Map<String, Object> deleteFailed(String collectionId) {
+        return Transport.await(deleteFailedAsync(collectionId));
     }
 
-    public CompletableFuture<Map<String, Object>> deleteFailedItemsAsync(String collectionId) {
+    public CompletableFuture<Map<String, Object>> deleteFailedAsync(String collectionId) {
         String path;
         try {
             path = path(collectionId) + "/items?status=failed";
