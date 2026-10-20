@@ -225,7 +225,23 @@ public final class CollectionsClient {
 
     public CompletableFuture<Map<String, Object>> listItemsAsync(String collectionId, Integer offset, Integer limit, String reference,
             String referencePrefix) {
-        StringBuilder q = new StringBuilder();
+        return listItemsAsync(collectionId, offset, limit, reference, referencePrefix, null, null);
+    }
+
+    /**
+     * {@code GET /v1/collections/{id}/items} on a knowledge base, with {@code q} (1 to 200
+     * characters, matched without regard to case against a document's title, file name or
+     * reference) and {@code sort} ({@code newest}, {@code oldest} or {@code title}), each sent only
+     * when given; null leaves a parameter out. The page, as sent, echoes both.
+     */
+    public Map<String, Object> listItems(String collectionId, Integer offset, Integer limit, String reference, String referencePrefix,
+            String q, String sort) {
+        return Transport.await(listItemsAsync(collectionId, offset, limit, reference, referencePrefix, q, sort));
+    }
+
+    public CompletableFuture<Map<String, Object>> listItemsAsync(String collectionId, Integer offset, Integer limit, String reference,
+            String referencePrefix, String q, String sort) {
+        StringBuilder query = new StringBuilder();
         String path;
         try {
             LocalChecks.listParams(offset, limit);
@@ -238,24 +254,36 @@ public final class CollectionsClient {
             if (referencePrefix != null) {
                 LocalChecks.referenceQuery("reference_prefix", referencePrefix);
             }
+            if (q != null && (q.isEmpty() || q.codePointCount(0, q.length()) > ITEMS_Q_MAX)) {
+                throw LocalChecks.usage("Query parameter q must be 1 to 200 characters.", null);
+            }
+            if (sort != null && !ITEMS_SORTS.contains(sort)) {
+                throw LocalChecks.usage("Query parameter sort must be newest, oldest or title, got " + LocalChecks.printable(sort, 16) + ".",
+                        null);
+            }
             path = path(collectionId) + "/items";
         } catch (RuntimeException e) {
             return CompletableFuture.failedFuture(e);
         }
         if (offset != null) {
-            q.append("offset=").append(offset);
+            query.append("offset=").append(offset);
         }
         if (limit != null) {
-            q.append(q.length() > 0 ? "&" : "").append("limit=").append(limit);
+            query.append(query.length() > 0 ? "&" : "").append("limit=").append(limit);
         }
-        if (reference != null) {
-            q.append(q.length() > 0 ? "&" : "").append("reference=").append(segment(reference, "reference"));
+        String[][] named = {{"reference", reference}, {"reference_prefix", referencePrefix}, {"q", q}, {"sort", sort}};
+        for (String[] p : named) {
+            if (p[1] != null) {
+                query.append(query.length() > 0 ? "&" : "").append(p[0]).append('=').append(segment(p[1], p[0]));
+            }
         }
-        if (referencePrefix != null) {
-            q.append(q.length() > 0 ? "&" : "").append("reference_prefix=").append(segment(referencePrefix, "referencePrefix"));
-        }
-        return call("GET", path + (q.length() > 0 ? "?" + q : ""), Transport.Policy.DEFAULT);
+        return call("GET", path + (query.length() > 0 ? "?" + query : ""), Transport.Policy.DEFAULT);
     }
+
+    /** The longest {@code q} of a knowledge base's items list, in characters. */
+    static final int ITEMS_Q_MAX = 200;
+    /** The orders of a knowledge base's items list. */
+    static final List<String> ITEMS_SORTS = List.of("newest", "oldest", "title");
 
     /** {@code DELETE /v1/collections/{id}/items/{item_id}}. */
     public Map<String, Object> deleteItem(String collectionId, String itemId) {

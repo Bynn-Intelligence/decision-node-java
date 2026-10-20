@@ -203,6 +203,10 @@ class KnowledgeTest {
         assertEquals("string_too_long", entryType(() -> c.updateItem("col_1", "itm_1", ItemUpdate.builder().title("").build())));
         assertThrows(BadRequestError.class, () -> c.listChunks("col_1", "itm_1", -1, null));
         assertThrows(BadRequestError.class, () -> c.listChunks("col_1", "itm_1", null, 101));
+        assertEquals("Query parameter q must be 1 to 200 characters.",
+                assertThrows(BadRequestError.class, () -> c.listItems("col_1", null, null, null, null, "", null)).getMessage());
+        assertEquals("Query parameter sort must be newest, oldest or title, got size.",
+                assertThrows(BadRequestError.class, () -> c.listItems("col_1", null, null, null, null, null, "size")).getMessage());
         assertTrue(seen.isEmpty(), "nothing sent: " + seen);
     }
 
@@ -410,8 +414,10 @@ class KnowledgeTest {
         c.getItem("col_1", "itm_1", true);
         c.listChunks("col_1", "itm_1");
         c.listChunks("col_1", "itm_1", 20, 10);
+        c.listItems("col_1", null, 5, null, null, "claims policy", "title");
         assertEquals(List.of("/v1/collections/col_1/items/itm_1", "/v1/collections/col_1/items/itm_1?include=text",
-                "/v1/collections/col_1/items/itm_1/chunks", "/v1/collections/col_1/items/itm_1/chunks?offset=20&limit=10"),
+                "/v1/collections/col_1/items/itm_1/chunks", "/v1/collections/col_1/items/itm_1/chunks?offset=20&limit=10",
+                "/v1/collections/col_1/items?limit=5&q=claims%20policy&sort=title"),
                 seen.stream().map(Seen::path).toList());
     }
 

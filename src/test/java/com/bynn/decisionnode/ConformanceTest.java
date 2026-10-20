@@ -1850,8 +1850,10 @@ class ConformanceTest {
                 String id = (String) args.get("collection_id");
                 String reference = (String) args.get("reference");
                 String prefix = (String) args.get("reference_prefix");
-                return async ? join(client.collections().listItemsAsync(id, offset, limit, reference, prefix))
-                        : client.collections().listItems(id, offset, limit, reference, prefix);
+                String q = (String) args.get("q");
+                String sort = (String) args.get("sort");
+                return async ? join(client.collections().listItemsAsync(id, offset, limit, reference, prefix, q, sort))
+                        : client.collections().listItems(id, offset, limit, reference, prefix, q, sort);
             }
             case "collections.delete_item":
                 return async ? join(client.collections().deleteItemAsync((String) args.get("collection_id"), (String) args.get("item_id")))
