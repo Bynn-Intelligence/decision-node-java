@@ -4,6 +4,59 @@ All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project uses
 [Semantic Versioning](https://semver.org/).
 
+## [0.4.0] - Unreleased
+
+Implements version 1.4 of the DecisionNode SDK specification: knowledge bases of your own
+documents, and the `knowledge` booster. Tested against conformance suite 1.27.
+
+### Added
+
+- Knowledge bases: `collections().create(name, "text", scopeKey)` makes a collection of type
+  `text`, its scope key (1 to 40 of `a-z 0-9 _`) sent only when given.
+- Documents: `Document.fromText(text)` (Markdown) or `fromText(text, format)`, `fromPath`,
+  `fromBytes` and `fromStream` (each with an optional content type and file name), and
+  `fromUpload(uploadId)`. `addDocument` (`POST .../items`) and `replaceDocument`
+  (`PUT .../items/{item_id}`) take `DocumentOptions` (`title`, `reference`, `pinned`, `pinRank`,
+  `label`, `metadata`, and `waitUntilReady`, which sends `?wait=true` and waits 20 seconds per
+  attempt unless a timeout is set). Text, and a text or Markdown file under the inline threshold
+  that is UTF-8 with no NUL, goes inline, titled by its file name's stem when no title is given;
+  any other file is uploaded with `"purpose": "knowledge"` (its `filename`, MD5 and SHA-256), its
+  storage `PUT` allowed 120 seconds unless `uploadTimeout` is set, then named by its upload id.
+  Each write carries its own `Idempotency-Key`, the same on every attempt; an upload the call
+  placed that the API calls stale is uploaded again once and sent under a new key.
+- `ItemUpdate` takes `pinned`, `pinRank` and `title` for a text item.
+- `getItem(col, itemId, includeText)`, `listChunks(col, itemId, offset, limit)`,
+  `listItems(..., q, sort)` on a knowledge base, `deleteFailed(col)`
+  (`DELETE .../items?status=failed`, `{"deleted": n}`), and `waitUntilReady(col)` or
+  `waitUntilReady(col, itemId, timeout, pollInterval)`: reads at once, then after 1 second, 1.5
+  times longer each time up to 10 seconds, until the document is `ready` or `failed` (returned,
+  not raised) or nothing is queued or processing; `TimeoutError` at a wall-clock deadline from the
+  call (300 seconds by default).
+- `search(col, query, SearchOptions)`: `POST .../search`, the options sent as given, returning a
+  `KnowledgeReading` with each passage's text.
+- `DecisionNode.uploadDocuments(documents)`: 1 to 16 documents uploaded with the knowledge
+  purpose, one upload id each.
+- The `knowledge` booster: `Booster.knowledge(collection)` and `KnowledgeBooster.of(collection)`
+  with `query`, `scope`, `match`, `filter`, `topK`, `maxTokens`, `pinned`, `minScore`,
+  `includeText` and `require`, always sent in the object form.
+- `KnowledgeReading` and `KnowledgePassage`, a `Reading`: the collection and its name, the
+  corpus, query, budget, scope and search objects (each keeping the object as sent), warnings,
+  passages with their citations (item, chunk, UTF-8 byte offsets), omitted counts, pending items
+  and `truncated`. A reading with a required field missing or of the wrong type is an
+  `UnknownReading`.
+- The local checks of documents with the API's own errors: a title, format, scope key,
+  reference, label, metadata, pin rank or empty text is its `ValidationError`, and a file that is
+  empty, over 50 MB or not a knowledge type its `BadRequestError`; a file whose type cannot be
+  told is an `IllegalArgumentException`.
+
+### Changed
+
+- `SPEC_VERSION` is `"1.4"`.
+- A collection's type may be `face` or `text`; another is the 422 "Input should be 'face' or
+  'text'".
+- A 529 whose `details.reason` is `ingestion_delayed` is raised at once, never retried.
+- `uploadTimeout`, when set, also bounds a document upload's storage `PUT`.
+
 ## [0.3.0] - Unreleased
 
 Implements version 1.3 of the DecisionNode SDK specification: boosters and fine-tuned models.
