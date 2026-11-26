@@ -1048,6 +1048,8 @@ class ConformanceTest {
         n.put("latency_ms", d.latencyMs());
         Map<String, Object> usage = new LinkedHashMap<>();
         usage.put("input_tokens", d.usage().inputTokens());
+        usage.put("image_tokens", d.usage().imageTokens());
+        usage.put("video_tokens", d.usage().videoTokens());
         usage.put("output_tokens", d.usage().outputTokens());
         usage.put("video_frames", d.usage().videoFrames());
         usage.put("video_seconds", d.usage().videoSeconds());

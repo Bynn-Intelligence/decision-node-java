@@ -48,9 +48,9 @@ import javax.net.ssl.SSLContext;
  */
 public final class DecisionNode {
     /** This SDK's version, sent in the {@code User-Agent} header. */
-    public static final String VERSION = "0.4.1";
+    public static final String VERSION = "0.5.0";
     /** The version of the DecisionNode SDK specification this SDK implements. */
-    public static final String SPEC_VERSION = "1.4";
+    public static final String SPEC_VERSION = "1.5";
 
     /** The most images one upload call takes: one presign holds 1 to 16 files. */
     static final int MAX_UPLOAD_FILES = 16;

@@ -5,7 +5,7 @@
 The official Java and Kotlin client for the [DecisionNode](https://decisionnode.com) API: ask
 typed questions about any state and get probabilities back.
 
-Java 17 or later. Works from Kotlin as is. Implements version 1.4 of the DecisionNode SDK
+Java 17 or later. Works from Kotlin as is. Implements version 1.5 of the DecisionNode SDK
 specification, which `DecisionNode.SPEC_VERSION` holds: decisions with `truth`, `choice`, `score`,
 `number`, `point` and `box` questions, up to 16 images and videos sent as frames, boosters and
 their evidence, knowledge bases of your own documents, fine-tuned models, the models list, image
@@ -148,6 +148,15 @@ parts) and `freeTier()` (true when the free tier covered the request, `modelUsd(
 `usd()` as the total; it is never computed from the parts, since adding doubles can differ from
 the booked amount in the last digits. A batch result line and a session's open and frame replies
 carry their own. It is null when the answer does not carry a cost.
+
+`usage().imageTokens()` and `usage().videoTokens()` (`Long`) are the shares of
+`usage().inputTokens()` that came from images and from videos, read from the
+`x-decisionnode-image-tokens` and `x-decisionnode-video-tokens` headers, so you can bill or budget
+vision tokens at your own price. `imageTokens()` is null for a request without images and
+`videoTokens()` is null for a request without videos (the server sends each header only when its
+share is above 0), and either is null when its header is not a whole number from 0 to 2^31 - 1.
+They are read as sent: the client never adds them to, or takes them from, another count, and
+never prices them. A batch result's decision reads null for both.
 
 ## The client
 
@@ -1029,7 +1038,7 @@ The conformance suite is the language-neutral set of cases every DecisionNode SD
 needs Python 3.10 or later for its mock server. Every case runs twice, through the blocking
 methods and through the `...Async` methods. Without `DECISIONNODE_CONFORMANCE_DIR` the
 conformance task fails rather than skipping. The suite's mock serves uploads, sessions (a
-WebSocket) and batches as well; this SDK passes every case of suite 1.13 in both forms. CI checks the suite out at a pinned commit, set
+WebSocket) and batches as well; this SDK passes every case of suite 1.28 in both forms. CI checks the suite out at a pinned commit, set
 once as `CONFORMANCE_REF` in `.github/workflows/ci.yml`; every action there is pinned to a
 commit SHA and no checkout keeps its credentials.
 

@@ -41,7 +41,7 @@ final class Responses {
         return new Decision(
                 answers(body.get("answers")),
                 model instanceof String ? (String) model : null,
-                usage(usage),
+                withTokenShares(usage(usage), headers),
                 headers.get("x-request-id"),
                 latency(headers.get("x-decisionnode-latency-ms")),
                 Safety.parse(headers.get("x-decisionnode-safety")),
@@ -627,6 +627,45 @@ final class Responses {
                         Json.asLong(usage.get("video_frames")), Json.asDouble(usage.get("video_seconds")),
                         Json.asLong(usage.get("booster_tokens")), Json.asLong(usage.get("boosters")),
                         cost(Json.asMap(usage.get("cost"))));
+    }
+
+    /** The largest token count a header may carry, 2^31 - 1. */
+    static final long MAX_HEADER_TOKENS = Integer.MAX_VALUE;
+
+    /**
+     * A decision's usage with the image and video shares of its input tokens, read from the
+     * {@code x-decisionnode-image-tokens} and {@code x-decisionnode-video-tokens} headers.
+     */
+    static Usage withTokenShares(Usage u, Headers headers) {
+        return new Usage(u.inputTokens(), u.outputTokens(), u.videoFrames(), u.videoSeconds(), u.boosterTokens(),
+                u.boosters(), u.cost(), tokenHeader(headers.get("x-decisionnode-image-tokens")),
+                tokenHeader(headers.get("x-decisionnode-video-tokens")));
+    }
+
+    /**
+     * A token count from a header: ASCII digits only after trimming spaces, from 0 to 2^31 - 1.
+     * Anything else (absent, empty, a sign, a fraction, too large) is null, never an error.
+     */
+    static Long tokenHeader(String value) {
+        if (value == null) {
+            return null;
+        }
+        String digits = value.strip();
+        if (digits.isEmpty()) {
+            return null;
+        }
+        long n = 0;
+        for (int i = 0; i < digits.length(); i++) {
+            char c = digits.charAt(i);
+            if (c < '0' || c > '9') {
+                return null;
+            }
+            n = n * 10 + (c - '0');
+            if (n > MAX_HEADER_TOKENS) {
+                return null;
+            }
+        }
+        return n;
     }
 
     /** {@code usage.cost}, every amount as sent and never summed; null when absent. */
